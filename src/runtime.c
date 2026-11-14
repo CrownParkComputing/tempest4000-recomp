@@ -76,6 +76,7 @@ void runtime_report(void) {
     runtime_sema_report();
     runtime_eventflag_report();
     runtime_content_report();
+    runtime_ngs2_report();
     runtime_memory_report();
     runtime_audio_report();
     runtime_pad_report();
@@ -225,6 +226,8 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (mutex) return mutex;
     uintptr_t thread = runtime_thread_resolve(name);
     if (thread) return thread;
+    uintptr_t ngs2=runtime_ngs2_resolve(name);
+    if (ngs2) return ngs2;
     uintptr_t content=runtime_content_resolve(name);
     if (content) return content;
     uintptr_t timer = runtime_time_resolve(name);

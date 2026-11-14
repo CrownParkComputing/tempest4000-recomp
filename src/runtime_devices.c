@@ -234,6 +234,9 @@ static ABI int32_t a3d_queue_level(uint32_t port,uint32_t *level,uint32_t *avail
 #define VIDEO_OUT_INVALID_VALUE ((int32_t)0x80290001)
 #define VIDEO_OUT_INVALID_ADDRESS ((int32_t)0x80290002)
 
+/* sceCameraIsAttached(index): 0 when no camera is attached, which is always so here. */
+static ABI int32_t camera_not_attached(int32_t index) { (void)index; return 0; }
+
 static const RuntimeExport exports[]={
     {"sceCameraOpen",camera_open}, {"sceCameraClose",camera_close},
     {"sceCameraSetConfig",camera_config},
@@ -246,5 +249,8 @@ static const RuntimeExport exports[]={
     {"sceAudio3dGetDefaultOpenParameters",a3d_default_parameters}, {"sceAudio3dPortSetAttribute",a3d_port_attribute},
     {"sceAudio3dBedWrite",a3d_bed_write}, {"sceAudio3dPortAdvance",a3d_port_advance},
     {"sceAudio3dPortPush",a3d_port_push}, {"sceAudio3dPortGetQueueLevel",a3d_queue_level},
+
+    /* Tempest 4000 asks before offering the camera modes; this machine has no PS4 camera. */
+    {"sceCameraIsAttached",camera_not_attached},
 };
 uintptr_t runtime_devices_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }

@@ -707,6 +707,14 @@ static ABI int32_t direct_map(void **out, uint64_t size, int prot, int flags, in
                         replaced ? " (over a mapping)" : "");
     return result;
 }
+/* sceKernelMapNamedDirectMemory(..., name): the same mapping, with a name the PS4 keeps for
+ * its own memory reports. Nothing here reads it back, so it is only logged. */
+static ABI int32_t named_direct_map(void **out, uint64_t size, int prot, int flags, int64_t physical,
+                                    uint64_t alignment, const char *name) {
+    int32_t result=direct_map(out,size,prot,flags,physical,alignment);
+    if (!result && name && runtime_verbose()) printf("Runtime: direct mapping named '%s'\n",name);
+    return result;
+}
 static int32_t unmap_locked(uintptr_t start, uint64_t size) {
     if (start%PAGE || !size) return INVALID;
     uint64_t end=start+align_up(size,PAGE);
@@ -858,7 +866,7 @@ static const RuntimeExport exports[]={
     {"mmap",posix_mmap}, {"msync",posix_msync},
     {"sceKernelGetDirectMemorySize",direct_size}, {"sceKernelAllocateDirectMemory",direct_allocate},
 
-    {"sceKernelMapDirectMemory",direct_map},
+    {"sceKernelMapDirectMemory",direct_map}, {"sceKernelMapNamedDirectMemory",named_direct_map},
     {"sceKernelReleaseDirectMemory",direct_release}, {"sceKernelMunmap",direct_unmap},
     {"sceKernelMapNamedFlexibleMemory",map_flexible_named},
 };

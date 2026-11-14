@@ -296,6 +296,21 @@ static ABI int32_t attr_set_affinity(ThreadAttr **slot,uint64_t mask) {
     if (!a) return ERR(22);
     a->affinity=mask; return 0;
 }
+/* scePthreadAttrGetdetachstate(attr, out): the state scePthreadAttrSetdetachstate recorded. */
+static ABI int32_t attr_get_detach(ThreadAttr **slot,int *out) {
+    ThreadAttr *a=find_attr(slot);
+    if (!a || !out) return ERR(22);
+    *out=a->detached; return 0;
+}
+/* scePthreadGetname(thread, out): the name the runtime recorded for the thread; `out` is a
+ * 32-byte buffer, as the PS4's is. */
+static ABI int32_t thread_get_name(GuestThread *thread,char *out) {
+    if (!out) return ERR(22);
+    GuestThread *t=thread ? thread : runtime_thread_current();
+    if (!t) return ERR(3);
+    snprintf(out,32,"%s",t->name);
+    return 0;
+}
 static ABI int32_t attr_affinity(ThreadAttr **slot,uint64_t *mask) {
     ThreadAttr *a=find_attr(slot);
     if (!a || !mask) return ERR(22);
@@ -488,6 +503,7 @@ uintptr_t runtime_thread_resolve(const char *name) {
 
         {"oIRFTjoILbg#libkernel",thread_set_sched},
         {"EI-5-jlq2dE#libkernel",thread_get_id},
+        {"How7B8Oet6k#libkernel",thread_get_name}, {"JaRMy+QcpeU#libkernel",attr_get_detach},
     };
     for (size_t i=0;i<sizeof(table)/sizeof(*table);++i)
         if (!strcmp(name,table[i].nid)) return (uintptr_t)table[i].fn;

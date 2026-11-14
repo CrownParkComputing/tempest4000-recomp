@@ -192,6 +192,22 @@ static ABI int32_t cond_timedwait(GuestCond **cond, GuestMutex **mutex, uint32_t
     if (deadline_after(&end, usec)) return orbis_error(EINVAL);
     return cond_wait_until(cond, mutex, &end);
 }
+/* scePthreadMutexTimedlock(mutex, usec): a lock that gives up after `usec`, reporting
+ * 0x8002003c (ETIMEDOUT) as the other timed waits here do. */
+static ABI int32_t mutex_timedlock(GuestMutex **mutex, uint32_t usec) {
+    int32_t e = ensure_mutex(mutex);
+    if (e) return e;
+    struct timespec end;
+    if (deadline_after(&end, usec)) return orbis_error(EINVAL);
+    GuestMutex *value=*mutex;
+    __atomic_add_fetch(&value->users,1,__ATOMIC_ACQ_REL);
+    const uint64_t wait_start = runtime_wait_begin();
+    e = timed_error(pthread_mutex_timedlock(&value->native, &end));
+    runtime_wait_end("mutex timedlock", wait_start, "mutex", (long long)(uintptr_t)value);
+    if (e) __atomic_sub_fetch(&value->users,1,__ATOMIC_RELEASE);
+    if (!e) ++locks;
+    return e;
+}
 static ABI int32_t cond_signal(GuestCond **cond) {
     int32_t e = ensure_cond(cond);
     if (e) return e;
@@ -235,6 +251,7 @@ uintptr_t runtime_mutex_resolve(const char *name) {
     if (!strcmp(name, "cmo1RIYva9o#libkernel")) return (uintptr_t)mutex_init;
     if (!strcmp(name, "9UK1vLZQft4#libkernel")) return (uintptr_t)mutex_lock;
     if (!strcmp(name, "upoVrzMHFeE#libkernel")) return (uintptr_t)mutex_trylock;
+    if (!strcmp(name, "IafI2PxcPnQ#libkernel")) return (uintptr_t)mutex_timedlock;
     if (!strcmp(name, "tn3VlD0hG60#libkernel")) return (uintptr_t)mutex_unlock;
     if (!strcmp(name, "2Of0f+3mhhE#libkernel")) return (uintptr_t)mutex_destroy;
     return 0;

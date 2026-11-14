@@ -168,10 +168,21 @@ static ABI int32_t evf_set(Flag *handle, uint64_t bits) {
     pthread_mutex_unlock(&lock);
     return 0;
 }
+/* sceKernelClearEventFlag(flag, bits): clears the bits that are 0 in `bits`, keeping the rest.
+ * No waiter can be satisfied by clearing, so none is woken. */
+static ABI int32_t evf_clear(Flag *handle, uint64_t bits) {
+    pthread_mutex_lock(&lock);
+    Flag *f=find(handle);
+    if (!f) { pthread_mutex_unlock(&lock); return ERR(3); }
+    f->bits&=bits;
+    pthread_mutex_unlock(&lock);
+    return 0;
+}
 static const RuntimeExport exports[]={
     {"sceKernelCreateEventFlag",evf_create}, {"sceKernelDeleteEventFlag",evf_delete},
     {"sceKernelWaitEventFlag",evf_wait},
     {"sceKernelSetEventFlag",evf_set},
+    {"sceKernelClearEventFlag",evf_clear},
 };
 uintptr_t runtime_eventflag_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
 void runtime_eventflag_report(void) {

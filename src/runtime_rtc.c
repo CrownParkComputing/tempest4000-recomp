@@ -140,11 +140,27 @@ static ABI int32_t rtc_parse_date_time(uint64_t *tick, const char *text) {
     *tick=to_tick(&t)-(uint64_t)((int64_t)zone*60000000);
     return 0;
 }
+/* sceRtcFormatRFC3339LocalTime(out, tick): the tick as RFC 3339 in the host's time zone, for
+ * example 2026-11-14T15:04:05.000000+00:00. `out` is at least 32 bytes, as the PS4's is. */
+static ABI int32_t rtc_format_rfc3339_local(char *out, uint64_t tick) {
+    if (!out) return ERR_INVALID_POINTER;
+    time_t unix_seconds = (time_t)((tick - UNIX_EPOCH_TICKS) / 1000000);
+    struct tm local;
+    if (!localtime_r(&unix_seconds, &local)) return ERR_INVALID_POINTER;
+    long offset = local.tm_gmtoff;
+    char sign = offset < 0 ? '-' : '+';
+    if (offset < 0) offset = -offset;
+    snprintf(out, 32, "%04d-%02d-%02dT%02d:%02d:%02d%c%02ld:%02ld",
+             local.tm_year + 1900, local.tm_mon + 1, local.tm_mday,
+             local.tm_hour, local.tm_min, local.tm_sec, sign, offset / 3600, offset / 60 % 60);
+    return 0;
+}
 static const RuntimeExport exports[]={
     {"sceRtcGetCurrentNetworkTick",rtc_current_tick},
 
     {"sceRtcGetTick",rtc_get_tick}, {"sceRtcSetTick",rtc_set_tick},
     {"sceRtcGetTickResolution",rtc_tick_resolution}, {"sceRtcTickAddHours",rtc_add_hours}, {"sceRtcTickAddSeconds",rtc_add_seconds},
     {"sceRtcGetTime_t",rtc_get_time_t}, {"sceRtcParseDateTime",rtc_parse_date_time},
+    {"sceRtcFormatRFC3339LocalTime",rtc_format_rfc3339_local},
 };
 uintptr_t runtime_rtc_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }

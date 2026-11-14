@@ -899,6 +899,17 @@ static ABI int32_t discmap_on_hdd(const char *path,int64_t offset,int64_t size,i
     (void)path; (void)offset; (void)size; (void)result; return DISC_MAP_NO_BITMAP;
 }
 
+/* sceSysmoduleLoadModuleInternalWithArg(id, argc, argv, result): as the plain load, with the
+ * module's own arguments; the host implementation needs none. */
+static ABI int32_t sysmodule_load_with_arg(uint32_t id,size_t argc,const void *argv,void *result) {
+    (void)id; (void)argc; (void)argv;
+    if (result) *(int32_t *)result = 0;
+    return 0;
+}
+/* sceVideoOutRegisterStereoBuffers: this runner presents one image, so the game keeps its 2D
+ * path. 0x8029000A is SCE_VIDEO_OUT_ERROR_INVALID_OPTION. */
+static ABI int32_t stereo_unsupported(void) { return (int32_t)0x8029000A; }
+
 static const RuntimeExport exports[]={
     {"sceUserServiceInitialize",user_initialize}, {"sceUserServiceTerminate",user_terminate},
     {"sceUserServiceGetInitialUser",user_initial}, {"sceUserServiceGetLoginUserIdList",user_list},
@@ -1008,5 +1019,10 @@ static const RuntimeExport exports[]={
     {"sceNpTrophyDestroyHandle",trophy_release}, {"sceNpTrophyDestroyContext",trophy_release},
 
     {"sceDiscMapIsRequestOnHDD",discmap_on_hdd},
+
+    /* Tempest 4000: every system library is provided by this runtime, so loading one with
+     * arguments only has to succeed. Stereoscopic 3D output is not offered. */
+    {"sceSysmoduleLoadModuleInternalWithArg",sysmodule_load_with_arg},
+    {"sceVideoOutRegisterStereoBuffers",stereo_unsupported},
 };
 uintptr_t runtime_services_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }

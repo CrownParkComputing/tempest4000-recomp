@@ -43,6 +43,15 @@ static ABI int32_t http_ok(void) { return 0; }
 #define COMPANION_NO_EVENT ((int32_t)0x80E40008)
 static ABI int32_t companion_no_event(void *event) { (void)event; return COMPANION_NO_EVENT; }
 
+/* ---- Tempest 4000 ---- */
+static ABI int32_t net_ok(void) { return 0; }
+/* sceNetCtlGetResult(eventType, errorCode): no request is outstanding, so the error is 0. */
+static ABI int32_t netctl_result(int32_t event,int32_t *error) {
+    (void)event;
+    if (error) *error = 0;
+    return 0;
+}
+
 static const RuntimeExport exports[]={
     {"sceCompanionHttpdInitialize2",http_ok}, {"sceCompanionHttpdTerminate",http_ok},
     {"sceCompanionHttpdStart",http_ok}, {"sceCompanionHttpdStop",http_ok},
@@ -55,5 +64,11 @@ static const RuntimeExport exports[]={
     {"sceHttpAbortRequest",http_ok},
     {"sceHttpSetSendTimeOut",http_ok}, {"sceHttpSetResolveTimeOut",http_ok},
     {"sceHttpSetRecvTimeOut",http_ok},
+
+    /* Tempest 4000 brings the stack up before asking for a connection. Starting and stopping
+     * succeed; the connection state is reported by sceNetCtlGetResult, which has nothing to
+     * report because nothing was ever requested. */
+    {"sceNetInit",net_ok}, {"sceNetTerm",net_ok},
+    {"sceNetCtlInit",net_ok}, {"sceNetCtlTerm",net_ok}, {"sceNetCtlGetResult",netctl_result},
 };
 uintptr_t runtime_net_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }

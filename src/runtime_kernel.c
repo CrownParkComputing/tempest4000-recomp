@@ -340,7 +340,31 @@ void runtime_thread_keys_cleanup(void) {
     }
 }
 
+/* Tempest 4000's libc start-up calls these; the PS4's libkernel keeps the bookkeeping for
+ * its own dynamic linker, which this runner does not have. Reporting success is what the
+ * callers need, and nothing here depends on the counts.
+ * _sceKernelSetThreadDtors(f) hands libc the destructor list the PS4's linker would run at
+ * thread exit; guest threads here end through scePthreadExit, which runs the guest's own
+ * cleanup, so the list is accepted and not kept. */
+static ABI int32_t set_thread_dtors(void *f) { (void)f; return 0; }
+static ABI int32_t thread_atexit_count(void *a,int32_t n) { (void)a; (void)n; return 0; }
+static ABI int32_t thread_atexit_report(void *a,void *b) { (void)a; (void)b; return 0; }
+static ABI int32_t rtld_atexit_increment(void) { return 0; }
+static ABI int32_t rtld_atexit_decrement(void) { return 0; }
+/* The address sanitizer is never on here, so the replacement tables stay empty. */
+static ABI void *sanitizer_malloc_replace(void) { return NULL; }
+static ABI void *sanitizer_new_replace(void) { return NULL; }
+static ABI int32_t sanitizer_enabled(void) { return 0; }
 static const RuntimeExport exports[]={
+    {"_sceKernelSetThreadDtors",set_thread_dtors},
+    {"_sceKernelSetThreadAtexitCount",thread_atexit_count},
+    {"_sceKernelSetThreadAtexitReport",thread_atexit_report},
+    {"_sceKernelRtldThreadAtexitIncrement",rtld_atexit_increment},
+    {"_sceKernelRtldThreadAtexitDecrement",rtld_atexit_decrement},
+    {"sceKernelGetSanitizerMallocReplaceExternal",sanitizer_malloc_replace},
+    {"sceKernelGetSanitizerNewReplaceExternal",sanitizer_new_replace},
+    {"sceKernelIsAddressSanitizerEnabled",sanitizer_enabled},
+    {"_nanosleep",posix_nanosleep},
     {"sceKernelClockGettime",kernel_clock_gettime}, {"clock_gettime",posix_clock_gettime},
 
     {"sceKernelGetProcessTime",process_time},

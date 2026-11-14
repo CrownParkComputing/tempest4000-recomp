@@ -328,10 +328,40 @@ static ABI int32_t t_set_param(const MountPoint *p, uint32_t type, const void *b
 static ABI int32_t t_icon(const MountPoint *p, const Icon *i) { return traced("SaveIcon",point_name(p),save_icon(p,i)); }
 static ABI int32_t t_delete(const Delete *d) { return traced("Delete",d ? dir_name(d->dir) : "null",save_delete(d)); }
 
+/* sceSaveDataGetParam(point, type, buffer, size, out): the mirror of sceSaveDataSetParam,
+ * reading back what was written for this mount. `out` receives the bytes produced. */
+static ABI int32_t save_get_param(const MountPoint *point, uint32_t type, void *buffer,
+                                  uint64_t size, uint64_t *out) {
+    if (!initialized) return ERR_NOT_INITIALIZED;
+    if (!buffer) return ERR_PARAMETER;
+    pthread_mutex_lock(&lock);
+    int slot=slot_of(point);
+    if (slot<0) { pthread_mutex_unlock(&lock); return ERR_NOT_MOUNTED; }
+    Param p; read_param(slots[slot].meta,&p);
+    pthread_mutex_unlock(&lock);
+    const void *source; uint64_t length;
+    switch (type) {
+    case 0: source=&p; length=sizeof(p); break;                                     /* ALL */
+    case 1: source=p.title; length=strnlen(p.title,sizeof(p.title))+1; break;
+    case 2: source=p.subtitle; length=strnlen(p.subtitle,sizeof(p.subtitle))+1; break;
+    case 3: source=p.detail; length=strnlen(p.detail,sizeof(p.detail))+1; break;
+    case 4: source=&p.user_param; length=sizeof(p.user_param); break;
+    default: return ERR_PARAMETER;
+    }
+    if (size<length) return ERR_PARAMETER;
+    memcpy(buffer,source,(size_t)length);
+    if (out) *out=length;
+    return 0;
+}
+static ABI int32_t t_get_param(const MountPoint *p, uint32_t type, void *b, uint64_t n, uint64_t *o) {
+    char d[48]; snprintf(d,sizeof(d),"%s, type %u",point_name(p),type);
+    return traced("GetParam",d,save_get_param(p,type,b,n,o));
+}
 static const RuntimeExport exports[]={
     {"sceSaveDataInitialize3",t_initialize}, {"sceSaveDataTerminate",t_terminate},
     {"sceSaveDataMount2",t_mount2}, {"sceSaveDataUmount",t_umount},
     {"sceSaveDataSetParam",t_set_param}, {"sceSaveDataSaveIcon",t_icon}, {"sceSaveDataDelete",t_delete},
+    {"sceSaveDataGetParam",t_get_param},
 };
 uintptr_t runtime_savedata_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
 void runtime_savedata_report(void) { printf("Runtime: save data mounts=%zu, memory writes=%zu, backups=%zu\n",mounts_done,memory_writes,backups_done); }

@@ -28,6 +28,20 @@ static int32_t new_object(void) { return atomic_fetch_add(&next_object,1); }
 static ABI int32_t ok(void) { return 0; }
 static ABI int32_t signed_out(void) { return NP_SIGNED_OUT; }
 
+/* ---- Tempest 4000 ----
+ * sceNpCreateRequest(ctx) hands out a request id the caller then uses; the calls made on it
+ * fail SIGNED_OUT like the rest, so a plain id is enough.
+ * The sign-in dialog is never shown: it reports FINISHED at once and a result of
+ * nobody signed in, so the game carries on offline. */
+#define DIALOG_STATUS_FINISHED 4
+#define SIGNIN_RESULT_CANCELED 1
+static ABI int32_t np_request(void) { return new_object(); }
+static ABI int32_t signin_status(void) { return DIALOG_STATUS_FINISHED; }
+static ABI int32_t signin_result(void *result) {
+    if (result) *(int32_t *)result = SIGNIN_RESULT_CANCELED;
+    return 0;
+}
+
 /* ---- NpTus / NpTss (shadPS4 np_tus.cpp) ----
  * sceNpTusCreateNpTitleCtxA(label, user) and sceNpTssCreateNpTitleCtxA need the user's NpId:
  * SIGNED_OUT. With no title context, sceNpTusCreateRequest(ctx), every Get/Set/Add/TryAndSet/
@@ -216,5 +230,18 @@ static const RuntimeExport exports[]={
     {"sceNpFriendListDialogInitialize",friends_init}, {"sceNpFriendListDialogOpenA",friends_open},
     {"sceNpFriendListDialogUpdateStatus",friends_status}, {"sceNpFriendListDialogGetResultA",friends_result},
     {"sceNpFriendListDialogClose",friends_close}, {"sceNpFriendListDialogTerminate",friends_term},
+
+    /* ---- Tempest 4000: the synchronous NpManager, NpScore, NpTrophy and SigninDialog calls ----
+     * No account is signed in, so identity and leaderboard calls report SIGNED_OUT; the dialog
+     * opens and finishes at once with nobody signed in. */
+    {"sceNpGetOnlineId",signed_out}, {"sceNpCreateRequest",np_request},
+    {"sceNpRegisterNpReachabilityStateCallback",ok},
+    {"sceNpScoreGetBoardInfo",signed_out}, {"sceNpScoreGetFriendsRankingA",signed_out},
+    {"sceNpScoreGetRankingByAccountId",signed_out}, {"sceNpScoreGetRankingByRangeA",signed_out},
+    {"sceNpScoreRecordScore",signed_out},
+    {"sceNpTrophyGetTrophyInfo",signed_out},
+    {"sceSigninDialogInitialize",ok}, {"sceSigninDialogOpen",ok},
+    {"sceSigninDialogUpdateStatus",signin_status}, {"sceSigninDialogGetResult",signin_result},
+    {"sceSigninDialogTerminate",ok},
 };
 uintptr_t runtime_np_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
