@@ -13,6 +13,7 @@
 #include "runtime.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define ERR_INVALID_OUT_ADDRESS ((int32_t)0x804A0053)
 #define ERR_INVALID_OUT_SIZE ((int32_t)0x804A0054)
@@ -31,15 +32,47 @@
 typedef struct { void *host_buffer; uint64_t host_buffer_size; uintptr_t reserved[5]; uintptr_t user_data; } ContextBufferInfo;
 typedef struct { void *buffer; uint64_t buffer_size; uint32_t waveform_type; uint32_t channels; } RenderBufferInfo;
 typedef struct { uint32_t state_flags; } VoiceState;
+/* A voice's parameters arrive as a chain: each block says its size and the byte offset of the
+ * next one, so the whole chain can be walked without knowing any particular block. */
+typedef struct { uint16_t size; int16_t next; uint32_t id; } VoiceParamHeader;
+/* The format of a voice's sample data, and one block of it. Both follow shadPS4's ngs2.h. */
+typedef struct { uint32_t type, channels, sample_rate, config, frame_offset, frame_margin; } WaveformFormat;
+typedef struct { uint32_t data_offset, data_size, repeats, skip_samples, samples, reserved; uintptr_t user_data; } WaveformBlock;
+/* Sampler voice parameters (ngs2_sampler.h): setting a voice up names its format, and the
+ * waveform-blocks parameter hands it the sample data itself. */
+#define PARAM_SAMPLER_SETUP 0x40010000u
+#define PARAM_SAMPLER_WAVEFORM_BLOCKS 0x40020000u
+/* Waveform types: the PCM family the render buffers use, and 0x40, which the game asks about
+ * for its music. */
+#define WAVEFORM_PCM_I16_LE 0x12u
+#define WAVEFORM_PCM_I16_BE 0x13u
+#define WAVEFORM_PCM_F32_LE 0x18u
+#define WAVEFORM_PCM_F32_BE 0x19u
 
 enum { SYSTEM_MAGIC=0x4e475332, RACK_MAGIC=0x4e475233, VOICE_MAGIC=0x4e475234 };
 
 typedef struct Rack Rack;
-typedef struct { uint32_t magic, state; Rack *rack; uint32_t index; } Voice;
+typedef struct {
+    uint32_t magic, state;
+    Rack *rack;
+    uint32_t index;
+    WaveformFormat format;     /* from PARAM_SAMPLER_SETUP */
+    const unsigned char *data; /* from PARAM_SAMPLER_WAVEFORM_BLOCKS */
+    uint32_t block_count;
+    const WaveformBlock *blocks;
+} Voice;
 struct Rack { uint32_t magic; void *system; uint32_t voice_count; Voice voices[]; };
 typedef struct { uint32_t magic; } System;
 
 static size_t systems, racks, voices_handed, renders, silent_bytes;
+/* RESOGUN_NGS2_TRACE=1 logs every call and what it answered: Scream's own error messages name
+ * only its source line, so the call that upset it has to be found from this side. */
+static int tracing(void) {
+    static int on=-1;
+    if (on<0) { const char *v=getenv("RESOGUN_NGS2_TRACE"); on = v && *v && *v!='0'; }
+    return on;
+}
+#define TRACE(...) do { if (tracing()) { printf("NGS2: " __VA_ARGS__); fflush(stdout); } } while (0)
 
 /* sceNgs2SystemCreateWithAllocator(option, allocator, outHandle): the option names the grain size
  * and voice limits, none of which a silent renderer needs. */
@@ -50,6 +83,7 @@ static ABI int32_t system_create(const void *option, const void *allocator, void
     if (!s) return ERR_OUT_OF_MEMORY;
     s->magic = SYSTEM_MAGIC;
     *out = s; ++systems;
+    TRACE("SystemCreateWithAllocator -> %p\n", (void *)s);
     return 0;
 }
 /* sceNgs2SystemDestroy(handle, outBufferInfo): the buffer the system was built in is reported
@@ -73,6 +107,8 @@ static ABI int32_t system_render(void *handle, const RenderBufferInfo *buffers, 
         silent_bytes += (size_t)buffers[i].buffer_size;
     }
     ++renders;
+    if (renders <= 3 || !(renders % 500))
+        TRACE("SystemRender(system=%p, buffers=%u) #%zu\n", handle, count, renders);
     return 0;
 }
 /* sceNgs2RackCreateWithAllocator(system, rackId, option, allocator, outHandle): a rack is a bank
@@ -97,6 +133,8 @@ static ABI int32_t rack_create(void *system, uint32_t rack_id, const void *optio
         r->voices[i].rack = r; r->voices[i].index = i;
     }
     *out = r; ++racks;
+    TRACE("RackCreateWithAllocator(system=%p, rackId=%u, option=%p) -> %p, %u voices\n",
+          system, rack_id, option, (void *)r, count);
     return 0;
 }
 static ABI int32_t rack_destroy(void *handle, ContextBufferInfo *out) {
@@ -113,6 +151,7 @@ static ABI int32_t rack_voice_handle(void *handle, uint32_t index, void **out) {
     if (!out) return ERR_INVALID_OUT_ADDRESS;
     if (index >= r->voice_count) return ERR_INVALID_VOICE_INDEX;
     *out = &r->voices[index]; ++voices_handed;
+    TRACE("RackGetVoiceHandle(rack=%p, index=%u) -> %p\n", handle, index, *out);
     return 0;
 }
 /* sceNgs2VoiceControl(voice, paramList): a chain of parameter blocks (set a waveform, a pitch,
@@ -120,7 +159,43 @@ static ABI int32_t rack_voice_handle(void *handle, uint32_t index, void **out) {
 static ABI int32_t voice_control(void *handle, const void *param_list) {
     Voice *v = handle;
     if (!v || v->magic != VOICE_MAGIC) return ERR_INVALID_VOICE_HANDLE;
-    (void)param_list;
+    /* The chain: each block says its own size and the byte offset of the next, 0 ending it. */
+    const unsigned char *at = param_list;
+    for (unsigned guard = 0; at && guard < 64; ++guard) {
+        const VoiceParamHeader *h = (const VoiceParamHeader *)at;
+        if (!h->size) break;
+        switch (h->id) {
+        case PARAM_SAMPLER_SETUP: {
+            const WaveformFormat *f = (const WaveformFormat *)(at + sizeof(*h));
+            v->format = *f;
+            TRACE("  setup voice=%p type=0x%x channels=%u rate=%u config=0x%x\n",
+                  handle, f->type, f->channels, f->sample_rate, f->config);
+            break;
+        }
+        case PARAM_SAMPLER_WAVEFORM_BLOCKS: {
+            /* data, flags, numBlocks, aBlock */
+            const unsigned char *body = at + sizeof(*h);
+            const void *data; uint32_t flags, count; const WaveformBlock *blocks;
+            memcpy(&data,body,sizeof(data));
+            memcpy(&flags,body+8,4);
+            memcpy(&count,body+12,4);
+            memcpy(&blocks,body+16,sizeof(blocks));
+            v->data = data; v->block_count = count; v->blocks = blocks;
+            TRACE("  waveform voice=%p data=%p flags=0x%x blocks=%u list=%p\n",
+                  handle, data, flags, count, (const void *)blocks);
+            if (tracing() && data && blocks && count && count < 64) {
+                const unsigned char *d = data;
+                TRACE("    block0 offset=%u size=%u samples=%u repeats=%u; first bytes %02x %02x %02x %02x %02x %02x %02x %02x\n",
+                      blocks[0].data_offset, blocks[0].data_size, blocks[0].samples, blocks[0].repeats,
+                      d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7]);
+            }
+            break;
+        }
+        default: break;
+        }
+        if (!h->next) break;
+        at += h->next;
+    }
     return 0;
 }
 /* sceNgs2VoiceGetState(voice, outState, size) and sceNgs2VoiceGetStateFlags(voice, outFlags):
@@ -154,6 +229,8 @@ static ABI int32_t waveform_frame_info(const void *format, uint32_t *frame_size,
     if (frame_samples) *frame_samples = 1;
     if (units_per_frame) *units_per_frame = 1;
     if (delay_samples) *delay_samples = 0;
+    TRACE("GetWaveformFrameInfo(type=%u, channels=%u, rate=%u) -> frame=%u\n",
+          ((const uint32_t *)format)[0], channels, ((const uint32_t *)format)[2], 4*channels);
     return 0;
 }
 
