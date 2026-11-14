@@ -1,23 +1,18 @@
-<img src="res/resogun.png">
+# Tempest 4000 (PS4) on PC - work in progress
 
-# Resogun (PS4) - Recompiled to PC
+**This does not play the game yet.** It is [CrownParkComputing/resogun-recomp](https://github.com/CrownParkComputing/resogun-recomp)
+(itself a fork of [rcostanza/resogun-recomp](https://github.com/rcostanza/resogun-recomp)) pointed
+at a second title, Tempest 4000 (CUSA09856). The runner, the HLE runtime and the renderer are
+their authors' work; what is here for Tempest is the starting point and the measurements.
 
-[![Get it on RecompLauncher](https://recomplauncher.com/assets/press/launcher/badge-dark.svg)](https://recomplauncher.com/game/resogun-recomp)
+**Read [PORTING.md](PORTING.md) first.** In short: a Tempest 4000 `.pkg` extracts, its eboot
+parses, the image prepares and the modules link, all with no changes. It then stops in libc
+initialization on the first of 52 unimplemented PS4 imports. The game's entry point has not run.
 
-[![Get on Quiver Launcher](https://img.shields.io/badge/Get_on-Quiver-blue)](https://quiverlauncher.com/apps/resogun-resogun-ps4-recompiled-to-pc)
+Everything below this line still describes Resogun, which this code does play. It is kept because
+the build, the setup and the `.pkg` extraction are the same.
 
-> **This is a fork** of [rcostanza/resogun-recomp](https://github.com/rcostanza/resogun-recomp), whose
-> authors wrote the recompiler, the runtime and the renderer. It adds installing straight from a PS4
-> `.pkg` and playing a DLC-unlocker-patched eboot. Same licence (GPL-2.0-or-later); please report
-> upstream bugs upstream.
-
-An (obviously) unofficial static recompilation of the PS4 version of <b>Resogun</b>, Housemarque's awesome shmup exclusive to PS platforms.
-
-The game's own x86-64 code runs directly on Linux: the PS4 system libraries it calls are reimplemented, and its GPU commands are drawn with Vulkan.
-
-🚨 **No game files are included** 🚨
-
-This requires you to provide the `.pkg` of your own copy of the game (or a decrypted dump of it). Only tested with **CUSA00038** with **update 1.10**.
+---
 
 ## Features
 
