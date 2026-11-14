@@ -29,6 +29,8 @@
  * which is what the sampler rack defaults to. */
 #define DEFAULT_VOICES 64
 #define MAX_VOICES 512
+/* One ATRAC9 superframe is at most 1024 samples a channel (4 frames of 256). */
+#define ATRAC9_MAX_SUPERFRAME 1024
 
 typedef struct { void *host_buffer; uint64_t host_buffer_size; uintptr_t reserved[5]; uintptr_t user_data; } ContextBufferInfo;
 typedef struct { void *buffer; uint64_t buffer_size; uint32_t waveform_type; uint32_t channels; } RenderBufferInfo;
@@ -42,7 +44,7 @@ typedef struct { uint32_t data_offset, data_size, repeats, skip_samples, samples
 /* Sampler voice parameters (ngs2_sampler.h): setting a voice up names its format, and the
  * waveform-blocks parameter hands it the sample data itself. */
 #define PARAM_SAMPLER_SETUP 0x40010000u
-#define PARAM_SAMPLER_WAVEFORM_BLOCKS 0x40020000u
+#define PARAM_SAMPLER_WAVEFORM_BLOCKS 0x40010001u
 /* Waveform types: the PCM family the render buffers use, and 0x40, which the game asks about
  * for its music. */
 #define WAVEFORM_PCM_I16_LE 0x12u
@@ -50,6 +52,10 @@ typedef struct { uint32_t data_offset, data_size, repeats, skip_samples, samples
 #define WAVEFORM_PCM_F32_LE 0x18u
 #define WAVEFORM_PCM_F32_BE 0x19u
 #define WAVEFORM_ATRAC9 0x40u
+/* The one voice state flag the engine reads back: a voice that has been given parameters is in
+ * use. Reporting nothing told the caller the voice was never allocated. */
+#define VOICE_STATE_IN_USE 1u
+#define VOICE_STATE_PLAYING 2u
 #define ERR_INVALID_WAVEFORM_TYPE ((int32_t)0x804A0402)
 
 enum { SYSTEM_MAGIC=0x4e475332, RACK_MAGIC=0x4e475233, VOICE_MAGIC=0x4e475234 };
@@ -63,11 +69,20 @@ typedef struct {
     const unsigned char *data; /* from PARAM_SAMPLER_WAVEFORM_BLOCKS */
     uint32_t block_count;
     const WaveformBlock *blocks;
+    /* Decoding state: one ATRAC9 superframe is decoded at a time and handed out a grain at a
+     * time, because a grain is shorter than a superframe. */
+    void *decoder;
+    uint32_t block;            /* which block is playing */
+    uint32_t read;             /* bytes consumed from it */
+    float pcm[ATRAC9_MAX_SUPERFRAME * 2];
+    uint32_t pcm_samples, pcm_taken;
+    uint32_t decode_channels;
 } Voice;
-struct Rack { uint32_t magic; void *system; uint32_t voice_count; Voice voices[]; };
-typedef struct { uint32_t magic; } System;
+struct Rack { uint32_t magic; void *system; struct Rack *next; uint32_t voice_count; Voice voices[]; };
+/* A system keeps its racks so rendering can walk every voice it owns. */
+typedef struct { uint32_t magic; Rack *racks; } System;
 
-static size_t systems, racks, voices_handed, renders, silent_bytes;
+static size_t systems, racks, voices_handed, renders, rendered_bytes, decoded_frames, mixed_voices;
 /* RESOGUN_NGS2_TRACE=1 logs every call and what it answered: Scream's own error messages name
  * only its source line, so the call that upset it has to be found from this side. */
 static int tracing(void) {
@@ -84,7 +99,7 @@ static ABI int32_t system_create(const void *option, const void *allocator, void
     if (!out) return ERR_INVALID_OUT_ADDRESS;
     System *s = runtime_low_alloc(sizeof(*s));
     if (!s) return ERR_OUT_OF_MEMORY;
-    s->magic = SYSTEM_MAGIC;
+    s->magic = SYSTEM_MAGIC; s->racks = NULL;
     *out = s; ++systems;
     TRACE("SystemCreateWithAllocator -> %p\n", (void *)s);
     return 0;
@@ -100,14 +115,82 @@ static ABI int32_t system_destroy(void *handle, ContextBufferInfo *out) {
 }
 /* sceNgs2SystemRender(handle, buffers, count): fills each buffer with one grain of output.
  * Silence is all zeroes for every waveform type this game uses (float and signed PCM). */
+/* The next `want` samples a channel of a voice, decoded as needed, into `out` interleaved by
+ * the voice's own channel count. Returns how many samples a channel were produced. */
+static uint32_t voice_samples(Voice *v, float *out, uint32_t want) {
+    if (!v->decoder || !v->data || !v->blocks || v->block >= v->block_count) return 0;
+    uint32_t done = 0;
+    while (done < want) {
+        if (v->pcm_taken < v->pcm_samples) {
+            uint32_t take = v->pcm_samples - v->pcm_taken;
+            if (take > want - done) take = want - done;
+            memcpy(out + (size_t)done * v->decode_channels,
+                   v->pcm + (size_t)v->pcm_taken * v->decode_channels,
+                   (size_t)take * v->decode_channels * sizeof(float));
+            v->pcm_taken += take; done += take;
+            continue;
+        }
+        /* Refill from the block that is playing; move on when it runs out. */
+        const WaveformBlock *b = &v->blocks[v->block];
+        if (v->read >= b->data_size) {
+            if (++v->block >= v->block_count) break;
+            v->read = 0;
+            continue;
+        }
+        const unsigned char *at = v->data + b->data_offset + v->read;
+        int used = 0;
+        if (Atrac9DecodeF32(v->decoder, at, (int)(b->data_size - v->read), v->pcm, &used, 0) || used <= 0)
+            break;
+        v->read += (uint32_t)used;
+        v->pcm_samples = ATRAC9_MAX_SUPERFRAME;   /* one superframe; the decoder fills what it has */
+        v->pcm_taken = 0;
+        decoded_frames++;
+    }
+    return done;
+}
+
+/* Adds a voice's samples into an interleaved output buffer. Channels beyond the voice's own are
+ * left alone, so a stereo voice lands on the first two of a surround buffer. */
+static void mix_into(const float *source, uint32_t source_channels, uint32_t samples,
+                     void *buffer, uint32_t type, uint32_t channels) {
+    for (uint32_t i = 0; i < samples; ++i)
+        for (uint32_t c = 0; c < channels && c < source_channels; ++c) {
+            float value = source[(size_t)i * source_channels + c];
+            size_t at = (size_t)i * channels + c;
+            if (type == WAVEFORM_PCM_F32_LE || type == WAVEFORM_PCM_F32_BE) {
+                ((float *)buffer)[at] += value;
+            } else {
+                int32_t sum = ((int16_t *)buffer)[at] + (int32_t)(value * 32767.0f);
+                ((int16_t *)buffer)[at] = (int16_t)(sum > 32767 ? 32767 : sum < -32768 ? -32768 : sum);
+            }
+        }
+}
+
 static ABI int32_t system_render(void *handle, const RenderBufferInfo *buffers, uint32_t count) {
     System *s = handle;
     if (!s || s->magic != SYSTEM_MAGIC) return ERR_INVALID_SYSTEM_HANDLE;
     if (count && !buffers) return ERR_INVALID_BUFFER_ADDRESS;
+    static float scratch[ATRAC9_MAX_SUPERFRAME * 2];
     for (uint32_t i = 0; i < count; ++i) {
         if (!buffers[i].buffer || !buffers[i].buffer_size) continue;
         memset(buffers[i].buffer, 0, (size_t)buffers[i].buffer_size);
-        silent_bytes += (size_t)buffers[i].buffer_size;
+        uint32_t channels = buffers[i].channels ? buffers[i].channels : 2;
+        uint32_t bytes = (buffers[i].waveform_type == WAVEFORM_PCM_I16_LE ||
+                          buffers[i].waveform_type == WAVEFORM_PCM_I16_BE) ? 2 : 4;
+        uint32_t grain = (uint32_t)(buffers[i].buffer_size / (bytes * channels));
+        if (grain > ATRAC9_MAX_SUPERFRAME) grain = ATRAC9_MAX_SUPERFRAME;
+        /* Every playing voice of every rack of this system is added into the buffer. */
+        for (Rack *r = s->racks; r; r = r->next)
+            for (uint32_t n = 0; n < r->voice_count; ++n) {
+                Voice *v = &r->voices[n];
+                if (!(v->state & VOICE_STATE_PLAYING)) continue;
+                uint32_t produced = voice_samples(v, scratch, grain);
+                if (!produced) { v->state &= ~VOICE_STATE_PLAYING; continue; }
+                mix_into(scratch, v->decode_channels, produced, buffers[i].buffer,
+                         buffers[i].waveform_type, channels);
+                mixed_voices++;
+            }
+        rendered_bytes += (size_t)buffers[i].buffer_size;
     }
     ++renders;
     if (renders <= 3 || !(renders % 500))
@@ -131,6 +214,7 @@ static ABI int32_t rack_create(void *system, uint32_t rack_id, const void *optio
     Rack *r = runtime_low_alloc(sizeof(*r) + count * sizeof(Voice));
     if (!r) return ERR_OUT_OF_MEMORY;
     r->magic = RACK_MAGIC; r->system = s; r->voice_count = count;
+    r->next = s->racks; s->racks = r;
     for (uint32_t i = 0; i < count; ++i) {
         r->voices[i].magic = VOICE_MAGIC; r->voices[i].state = 0;
         r->voices[i].rack = r; r->voices[i].index = i;
@@ -143,6 +227,12 @@ static ABI int32_t rack_create(void *system, uint32_t rack_id, const void *optio
 static ABI int32_t rack_destroy(void *handle, ContextBufferInfo *out) {
     Rack *r = handle;
     if (!r || r->magic != RACK_MAGIC) return ERR_INVALID_RACK_HANDLE;
+    System *owner = r->system;
+    if (owner && owner->magic == SYSTEM_MAGIC)
+        for (Rack **link = &owner->racks; *link; link = &(*link)->next)
+            if (*link == r) { *link = r->next; break; }
+    for (uint32_t i = 0; i < r->voice_count; ++i)
+        if (r->voices[i].decoder) { Atrac9ReleaseHandle(r->voices[i].decoder); r->voices[i].decoder = NULL; }
     r->magic = 0;
     if (out) memset(out, 0, sizeof(*out));
     return 0;
@@ -162,6 +252,9 @@ static ABI int32_t rack_voice_handle(void *handle, uint32_t index, void **out) {
 static ABI int32_t voice_control(void *handle, const void *param_list) {
     Voice *v = handle;
     if (!v || v->magic != VOICE_MAGIC) return ERR_INVALID_VOICE_HANDLE;
+    /* Any parameter at all means the engine has taken this voice; shadPS4's NGS2 reports the
+     * same single flag. With no flag the caller reads the voice back as never allocated. */
+    v->state |= VOICE_STATE_IN_USE;
     /* The chain: each block says its own size and the byte offset of the next, 0 ending it. */
     const unsigned char *at = param_list;
     for (unsigned guard = 0; at && guard < 64; ++guard) {
@@ -184,6 +277,25 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
             memcpy(&count,body+12,4);
             memcpy(&blocks,body+16,sizeof(blocks));
             v->data = data; v->block_count = count; v->blocks = blocks;
+            v->block = 0; v->read = 0; v->pcm_samples = 0; v->pcm_taken = 0;
+            if (v->format.type == WAVEFORM_ATRAC9 && data && blocks && count) {
+                if (!v->decoder) v->decoder = Atrac9GetHandle();
+                unsigned char cfg[ATRAC9_CONFIG_DATA_SIZE] = {
+                    (unsigned char)(v->format.config >> 24), (unsigned char)(v->format.config >> 16),
+                    (unsigned char)(v->format.config >> 8), (unsigned char)v->format.config,
+                };
+                Atrac9CodecInfo info;
+                if (v->decoder && !Atrac9InitDecoder(v->decoder, cfg) &&
+                    !Atrac9GetCodecInfo(v->decoder, &info)) {
+                    v->decode_channels = (uint32_t)info.channels;
+                    v->state |= VOICE_STATE_PLAYING;
+                    TRACE("    decoder ready: %d ch, %d Hz, superframe %d bytes, %d samples\n",
+                          info.channels, info.samplingRate, info.superframeSize,
+                          info.frameSamples * info.framesInSuperframe);
+                } else {
+                    TRACE("    decoder refused this voice's configuration 0x%08x\n", v->format.config);
+                }
+            }
             TRACE("  waveform voice=%p data=%p flags=0x%x blocks=%u list=%p\n",
                   handle, data, flags, count, (const void *)blocks);
             if (tracing() && data && blocks && count && count < 64) {
@@ -294,6 +406,7 @@ static const RuntimeExport exports[]={
 uintptr_t runtime_ngs2_resolve(const char *name) { return RUNTIME_LOOKUP(exports,name); }
 void runtime_ngs2_report(void) {
     if (!systems && !racks) return;
-    printf("Runtime: NGS2 systems=%zu, racks=%zu, voice handles=%zu, renders=%zu, silence=%zu bytes\n",
-           systems, racks, voices_handed, renders, silent_bytes);
+    printf("Runtime: NGS2 systems=%zu, racks=%zu, voice handles=%zu, renders=%zu, "
+           "%zu bytes rendered, ATRAC9 superframes decoded=%zu, voice mixes=%zu\n",
+           systems, racks, voices_handed, renders, rendered_bytes, decoded_frames, mixed_voices);
 }
