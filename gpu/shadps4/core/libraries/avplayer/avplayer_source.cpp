@@ -10,6 +10,10 @@
 #include "core/libraries/videodec/video_utils.h"
 #include "core/memory.h"
 
+#include <cstdio>
+// tempest: settings.ini skip_intro (gpu/shim/tempest_settings.cpp).
+extern "C" int tempest_skip_intro(void);
+
 #include <magic_enum/magic_enum.hpp>
 
 extern "C" {
@@ -69,6 +73,16 @@ bool AvPlayerSource::Init(const AvPlayerInitData& init_data, std::string_view pa
         context->flags |= AVFMT_FLAG_CUSTOM_IO;
     };
 
+    // tempest: skip_intro refuses the intro movie. The engine waits on it and does not reliably
+    // come back (it sits in the splash forever); with the movie reported missing it goes straight
+    // to its title screen, which is what a dump without the file does.
+    if (tempest_skip_intro()) {
+        LOG_INFO(Lib_AvPlayer, "Skipping {} (skip_intro)", path);
+        std::printf("Intro: %s skipped (skip_intro=1)\n", std::string(path).c_str());
+        std::fflush(stdout);
+        avformat_free_context(context);
+        return false;
+    }
     if (init_data.file_replacement.open != nullptr) {
         LOG_INFO(Lib_AvPlayer, "Opening {} through the game-provided file replacement", path);
         m_up_data_streamer = std::make_unique<AvPlayerFileStreamer>(init_data.file_replacement);

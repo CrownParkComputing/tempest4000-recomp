@@ -104,6 +104,10 @@ typedef struct {
      * them followed by padding that has to be stepped over. */
     uint32_t frame_samples, frames_in_superframe, superframe_bytes;
     uint32_t frame_index, input_cursor;
+    /* A block does not start at its first decoded sample and does not run to the end of what
+     * it decodes: numSkipSamples are dropped and only numSamples are played. */
+    uint32_t skip_samples, remaining_samples;
+    int block_started;
 } Voice;
 struct Rack { uint32_t magic; void *system; struct Rack *next; uint32_t voice_count; Voice voices[]; };
 /* A system keeps its racks so rendering can walk every voice it owns. */
@@ -149,19 +153,36 @@ static uint32_t voice_samples(Voice *v, float *out, uint32_t want) {
     uint32_t done = 0;
     while (done < want) {
         if (v->pcm_taken < v->pcm_samples) {
+            /* Drop the block's lead-in before anything is handed out. */
+            if (v->skip_samples) {
+                uint32_t drop = v->pcm_samples - v->pcm_taken;
+                if (drop > v->skip_samples) drop = v->skip_samples;
+                v->pcm_taken += drop; v->skip_samples -= drop;
+                continue;
+            }
             uint32_t take = v->pcm_samples - v->pcm_taken;
             if (take > want - done) take = want - done;
+            if (v->remaining_samples != UINT32_MAX && take > v->remaining_samples)
+                take = v->remaining_samples;
+            if (!take) break;
             memcpy(out + (size_t)done * v->decode_channels,
                    v->pcm + (size_t)v->pcm_taken * v->decode_channels,
                    (size_t)take * v->decode_channels * sizeof(float));
             v->pcm_taken += take; done += take;
+            if (v->remaining_samples != UINT32_MAX) v->remaining_samples -= take;
             continue;
         }
         /* Refill from the block that is playing; move on when it runs out. */
         const WaveformBlock *b = &v->blocks[v->block];
-        if (v->read >= b->data_size) {
+        if (!v->block_started) {
+            v->skip_samples = b->skip_samples;
+            v->remaining_samples = b->samples ? b->samples : UINT32_MAX;
+            v->block_started = 1;
+        }
+        if (v->read >= b->data_size || !v->remaining_samples) {
             if (++v->block >= v->block_count) break;
-            v->read = 0;
+            v->read = 0; v->block_started = 0;
+            v->frame_index = 0; v->input_cursor = 0;
             continue;
         }
         const unsigned char *at = v->data + b->data_offset + v->read;
@@ -333,6 +354,7 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
             memcpy(&blocks,body+16,sizeof(blocks));
             v->data = data; v->block_count = count; v->blocks = blocks;
             v->block = 0; v->read = 0; v->pcm_samples = 0; v->pcm_taken = 0;
+            v->skip_samples = 0; v->remaining_samples = 0; v->block_started = 0;
             if (v->format.type == WAVEFORM_ATRAC9 && data && blocks && count) {
                 if (!v->decoder) v->decoder = Atrac9GetHandle();
                 unsigned char cfg[ATRAC9_CONFIG_DATA_SIZE] = {

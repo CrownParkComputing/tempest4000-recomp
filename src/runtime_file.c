@@ -5,6 +5,7 @@
  * Paths containing ".." components are rejected rather than normalized. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "gpu/tempest_gpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -262,6 +263,16 @@ static int64_t do_open(const char *guest,int flags,int mode) {
         return fd<0 ? -EMFILE : fd;
     }
     if (game_path(guest) && (flags & (3|0x8|0x200|0x400|0x800))) return -EROFS;
+    /* skip_intro: the engine waits on its intro movie and does not always come back from it
+     * (AvPlayer). Reporting the movie missing is what the engine handles cleanly, and it then
+     * goes straight to the title screen. Only the game's own .mp4 files are refused. */
+    if (tempest_skip_intro() && game_path(guest)) {
+        size_t n = strlen(guest);
+        if (n > 4 && !strcasecmp(guest + n - 4, ".mp4")) {
+            printf("Runtime: open(%s) -> skipped (skip_intro=1)\n", guest);
+            return -ENOENT;
+        }
+    }
     char path[1024];
     int e=translate(guest,path,sizeof(path));
     if (e) return -e;
