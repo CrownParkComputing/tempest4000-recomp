@@ -47,6 +47,57 @@ is the 14 `libkernel` entries, then the 10 `libSceNgs2` ones for audio.
 `out/<image>/missing-imports.txt` lists all 52 with their NIDs; `tools/name_imports.py` resolves
 names against `tools/ps4_names.txt`.
 
+## shadPS4 already has almost all of it
+
+Checked on 2026-11-14 against shadPS4 `main`, NID by NID, ignoring its `aerolib.inl` name table
+(which lists every NID whether or not it is implemented):
+
+**45 of the 52 have a real implementation in a shadPS4 library**, and this repository already
+vendors that project's video core under `gpu/shadps4/` with its changes marked `// resogun:`, so
+taking more of it follows a path that is already here. Same licence, GPL-2.0-or-later.
+
+| Library | Missing here | In shadPS4 | Source |
+|---|---|---|---|
+| `libSceNgs2` | 10 | **10** | `core/libraries/ngs2/` (`ngs2.cpp` 20 KB, `ngs2_impl.cpp` 34 KB) |
+| `libSceAudio3d` | 4 | **4** | `core/libraries/audio3d/` — needs OpenAL (`AL/al.h`) |
+| `libSceNpScore` | 5 | **5** | `core/libraries/np/np_score/` |
+| `libSceSigninDialog` | 5 | **5** | `core/libraries/signin_dialog/` |
+| `libSceNetCtl` | 3 | **3** | `core/libraries/network/netctl.cpp` |
+| `libSceNpManager` | 3 | **3** | `core/libraries/np/np_manager.cpp` |
+| `libSceNet` | 2 | **2** | `core/libraries/net/net.cpp` |
+| `libkernel` | 14 | **8** | `kernel/threads/{pthread,pthread_attr,mutex,event_flag}.cpp`, `kernel/{memory,time}.cpp` |
+| `libSceCamera`, `libSceRtc`, `libSceSaveData`, `libSceNpTrophy`, `libSceSysmodule` | 1 each | **5** | their own folders |
+| `libSceVideoOut` | 1 | 0 | see below |
+
+**The blocker is covered**: `rNhWz+lvOMU#libkernel`, the import that stops libc initialization, is
+implemented in `core/libraries/kernel/threads/pthread.cpp`.
+
+### The 7 that are not implemented anywhere
+
+shadPS4 marks these `STUB` in its own name table. Every one of them looks like a return-a-constant
+stub rather than real work:
+
+| NID | Name | Note |
+|---|---|---|
+| `pB-yGZ2nQ9o` | `_sceKernelSetThreadAtexitCount` | linker thread-atexit bookkeeping |
+| `WhCc1w3EhSI` | `_sceKernelSetThreadAtexitReport` | same |
+| `8OnWXlgQlvo` | `_sceKernelRtldThreadAtexitDecrement` | same |
+| `Tz4RNUCBbGI` | `_sceKernelRtldThreadAtexitIncrement` | same |
+| `py6L8jiVAN8` | `sceKernelGetSanitizerMallocReplaceExternal` | ASan hook; return null |
+| `bnZxYgAFeA0` | `sceKernelGetSanitizerNewReplaceExternal` | ASan hook; return null |
+| `lCTCOogRbk0` | `sceVideoOutRegisterStereoBuffers` | stereoscopic 3D; refusing it should cost only the 3D mode (the game ships `libSceS3DConversion`) |
+
+So the import gap is **45 portable from shadPS4 plus 7 stubs**, not 52 functions to write. In
+particular there is no need to convert or reimplement the game's audio: NGS2 is done.
+
+### How imports are added here
+
+A function goes in a `src/runtime_*.c` export table as `{"name", function}` with its NID in
+`src/import_names.inc`; `libScePosix` imports are looked up under the `libkernel` key
+(`runtime.c`, `canonical_name`). shadPS4's libraries are C++ against its own kernel objects, so
+they are a reference and a source to adapt, not a drop-in: this runner has its own thread, mutex
+and memory implementations in `src/runtime_*.c` that the adapted code has to sit on.
+
 ## What is Resogun-specific in here
 
 This runner was written for one game, so expect to find assumptions:
