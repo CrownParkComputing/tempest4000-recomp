@@ -306,8 +306,8 @@ typedef struct { int32_t user; int32_t pad; const TitleId *title; const DirName 
 typedef struct { int32_t user; int32_t pad; const TitleId *title; const DirName *dir; const void *fingerprint;
                  uint8_t reserved[32]; } TransferringMount;
 
-/* RESOGUN_SAVE_TRACE=1: every call above with its result (polls only when the result changes). */
-static int save_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("RESOGUN_SAVE_TRACE"); v=e && e[0]=='1'; } return v; }
+/* TEMPEST_SAVE_TRACE=1: every call above with its result (polls only when the result changes). */
+static int save_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("TEMPEST_SAVE_TRACE"); v=e && e[0]=='1'; } return v; }
 static int32_t traced(const char *call, const char *detail, int32_t r) {
     if (save_trace()) printf("Save trace: %s(%s) -> 0x%x\n",call,detail ? detail : "",(unsigned)r);
     return r;

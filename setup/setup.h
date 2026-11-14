@@ -44,10 +44,10 @@ constexpr const wchar_t* kSaveFolders[] = {L"savedata"};
 
 using Log = std::function<void(const std::wstring&)>;
 
-constexpr wchar_t kGameExe[] = L"resogun";
-constexpr wchar_t kSetupExe[] = L"resogun-setup";
+constexpr wchar_t kGameExe[] = L"tempest";
+constexpr wchar_t kSetupExe[] = L"tempest-setup";
 // A desktop entry (freedesktop.org), in the application menu or on the Desktop.
-constexpr wchar_t kShortcutName[] = L"resogun.desktop";
+constexpr wchar_t kShortcutName[] = L"tempest.desktop";
 
 // A path as text for the user and paths.ini, and text back as a path. Linux paths are UTF-8 bytes,
 // which these convert without depending on the locale.
@@ -65,11 +65,11 @@ std::filesystem::path game_folder(const std::filesystem::path& path);
 bool is_pkg(const std::filesystem::path& path);
 // The folder a .pkg is extracted into: next to the file, named after it (CUSA00038.pkg -> CUSA00038).
 std::filesystem::path pkg_folder(const std::filesystem::path& pkg);
-// The files a Resogun dump needs that `game` (a path game_folder() accepts) lacks; empty for a dump.
+// The files a Tempest dump needs that `game` (a path game_folder() accepts) lacks; empty for a dump.
 std::vector<std::wstring> missing_game_files(const std::filesystem::path& game);
 // What `root`/paths.ini names, if it names both folders.
 std::optional<Paths> read_paths(const std::filesystem::path& root);
-// The per-user copy of paths.ini that install() also writes: %APPDATA%\Resogun\paths.ini, or $XDG_CONFIG_HOME/resogun/paths.ini (~/.config when unset); src/launcher.c
+// The per-user copy of paths.ini that install() also writes: %APPDATA%\Tempest\paths.ini, or $XDG_CONFIG_HOME/tempest/paths.ini (~/.config when unset); src/launcher.c
 // reads it when the release folder has none. Empty when %APPDATA% is unset.
 std::filesystem::path user_paths_ini();
 // read_paths(root), else the per-user copy: the folders to start from in a release just unpacked.

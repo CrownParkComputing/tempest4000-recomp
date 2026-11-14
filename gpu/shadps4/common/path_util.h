@@ -107,9 +107,9 @@ constexpr auto LOG_FILE = "shad_log.txt";
 void SetUserPath(PathType user_path, const std::filesystem::path& new_path);
 
 /**
- * resogun: the folder of the game's shader and pipeline cache: RESOGUN_SHADER_DIR (the launcher's
+ * tempest: the folder of the game's shader and pipeline cache: TEMPEST_SHADER_DIR (the launcher's
  * shaders folder next to the exe), else the cache folder's <serial> subfolder. The first call
- * moves a cache an earlier release left in the old place into RESOGUN_SHADER_DIR.
+ * moves a cache an earlier release left in the old place into TEMPEST_SHADER_DIR.
  */
 [[nodiscard]] const std::filesystem::path& GetShaderCachePath(std::string_view serial);
 

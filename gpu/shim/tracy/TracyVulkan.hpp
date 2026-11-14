@@ -1,4 +1,4 @@
-// resogun: profiler disabled.
+// tempest: profiler disabled.
 #pragma once
 #include "Tracy.hpp"
 #define TracyVkCtx void*

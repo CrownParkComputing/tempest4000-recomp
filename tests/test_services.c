@@ -17,15 +17,15 @@
 #endif
 
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *nid) { (void)table; (void)count; (void)nid; return 0; }
-int resogun_gpu_text_input_begin(const char *text, const char *prompt) { (void)text; (void)prompt; return 0; }
-int resogun_gpu_text_input_poll(char *text, uint64_t size) { (void)text; (void)size; return 0; }
-void resogun_gpu_common_dialog_initialized(void) {}
+int tempest_gpu_text_input_begin(const char *text, const char *prompt) { (void)text; (void)prompt; return 0; }
+int tempest_gpu_text_input_poll(char *text, uint64_t size) { (void)text; (void)size; return 0; }
+void tempest_gpu_common_dialog_initialized(void) {}
 /* Not the repository's user/ (run.py's save folder: a real trophies.dat there failed the checks). */
 #define MOCK_USER "out/test_services_no_user"
 static char mock_user_dir[512]=MOCK_USER;
 const char *runtime_file_user_dir(void) { return mock_user_dir; }
 static char last_toast_title[128], last_toast_detail[256];
-void resogun_gpu_toast_trophy(int id, const char *title, const char *detail, const unsigned char *png, uint64_t png_size) {
+void tempest_gpu_toast_trophy(int id, const char *title, const char *detail, const unsigned char *png, uint64_t png_size) {
     (void)id; (void)png; (void)png_size;
     if (title) snprintf(last_toast_title, sizeof(last_toast_title), "%s", title);
     else last_toast_title[0] = 0;
@@ -44,21 +44,21 @@ static unsigned char preview_bytes[8];
 static char shown_title[3000], shown_items[33][3000];
 static unsigned char save_param[RUNTIME_SAVE_PARAM_SIZE];
 static int save_param_available;
-int resogun_gpu_choice_begin(const char *title, const char *const *items, const char *const *images, int count, int focus) {
+int tempest_gpu_choice_begin(const char *title, const char *const *items, const char *const *images, int count, int focus) {
     (void)images;
     choice_count=count; choice_focus=focus; choice_next=-1;
     snprintf(shown_title,sizeof(shown_title),"%s",title);
     for (int i=0;i<count && i<33;++i) snprintf(shown_items[i],sizeof(shown_items[i]),"%s",items[i]);
     return choice_available && count>0;
 }
-int resogun_gpu_choice_poll(void) { return choice_next; }
-int resogun_gpu_choice_confirm(const char *title, const char *const *items, int count, int focus,
+int tempest_gpu_choice_poll(void) { return choice_next; }
+int tempest_gpu_choice_confirm(const char *title, const char *const *items, int count, int focus,
                                  const unsigned char *png, uint64_t size, const char *caption, const char *unavailable) {
     assert(caption && *caption && unavailable && *unavailable);
     ++preview_calls; preview_size=size;
     memset(preview_bytes,0,sizeof(preview_bytes));
     if (png && size) memcpy(preview_bytes,png,size<sizeof(preview_bytes) ? (size_t)size : sizeof(preview_bytes));
-    return resogun_gpu_choice_begin(title,items,NULL,count,focus);
+    return tempest_gpu_choice_begin(title,items,NULL,count,focus);
 }
 int runtime_savedata_param(int32_t user, const char *dir, void *param) {
     (void)user; (void)dir;
@@ -227,16 +227,16 @@ int main(void) {
     /* A save's subtitle and detail appear in its row; the overwrite question shows the subtitle
      * in place of the title. Detail text in Latin-1 is shown as UTF-8. */
     save_param_available=1;
-    strcpy((char *)save_param,"RESOGUN");
+    strcpy((char *)save_param,"TEMPEST");
     strcpy((char *)save_param+128,"Arcade, Veteran");
     strcpy((char *)save_param+256,"Pontua\xe7\xe3o 1234567");
     int64_t timestamp=1720000000; memcpy(save_param+1288,&timestamp,8);
     assert(save_open(list)==0);
-    assert(strstr(shown_items[1],"RESOGUN") && strstr(shown_items[1],"Arcade, Veteran"));
+    assert(strstr(shown_items[1],"TEMPEST") && strstr(shown_items[1],"Arcade, Veteran"));
     assert(strstr(shown_items[1],"Pontua\xc3\xa7\xc3\xa3o 1234567"));
     choice_next=1; assert(save_status()==DIALOG_RUNNING);
     assert(strstr(shown_title,"Arcade, Veteran") && strstr(shown_title,"1234567"));
-    assert(!strstr(shown_title,"RESOGUN") && !strstr(shown_title,"SAVE0001"));
+    assert(!strstr(shown_title,"TEMPEST") && !strstr(shown_title,"SAVE0001"));
     choice_next=0; assert(save_status()==DIALOG_FINISHED);
 
     /* Valid UTF-8 stays intact; absent and unterminated metadata are bounded. */
@@ -444,22 +444,22 @@ int main(void) {
     if (!tmp || !tmp[0]) tmp="/tmp";
 
     char test_user[256], test_txt[512], test_dat[512];
-    snprintf(test_user,sizeof(test_user),"%s/resogun_test_user_%d",tmp,(int)test_getpid());
+    snprintf(test_user,sizeof(test_user),"%s/tempest_test_user_%d",tmp,(int)test_getpid());
     snprintf(test_txt,sizeof(test_txt),"%s/trophy_names.txt",test_user);
     snprintf(test_dat,sizeof(test_dat),"%s/trophies.dat",test_user);
 
     snprintf(mock_user_dir,sizeof(mock_user_dir),"%s",test_user);
     assert(!strcmp(trophy_dir(),test_user));
 #ifdef _WIN32
-    _putenv("RESOGUN_USER_DIR=out/test_trophy_env");
+    _putenv("TEMPEST_USER_DIR=out/test_trophy_env");
 #else
-    setenv("RESOGUN_USER_DIR","out/test_trophy_env",1);
+    setenv("TEMPEST_USER_DIR","out/test_trophy_env",1);
 #endif
     assert(!strcmp(trophy_dir(),"out/test_trophy_env"));
 #ifdef _WIN32
-    _putenv("RESOGUN_USER_DIR=");
+    _putenv("TEMPEST_USER_DIR=");
 #else
-    unsetenv("RESOGUN_USER_DIR");
+    unsetenv("TEMPEST_USER_DIR");
 #endif
     assert(!strcmp(trophy_dir(),test_user));
 
@@ -517,35 +517,35 @@ int main(void) {
         fputs("\xEF\xBB\xBF# comment\n3=Sr. M\xC3\xA3o | Ache a sala\n",texts);
         fclose(texts);
 #ifdef _WIN32
-        _putenv("RESOGUN_USER_DIR=.");
+        _putenv("TEMPEST_USER_DIR=.");
 #else
-        setenv("RESOGUN_USER_DIR",".",1);
+        setenv("TEMPEST_USER_DIR",".",1);
 #endif
         trophy_load_names();
         assert(!strcmp(trophy_names[3],"Sr. M\xC3\xA3o") && !strcmp(trophy_details[3],"Ache a sala"));
         remove("trophy_names.txt");
 #ifdef _WIN32
-        _putenv("RESOGUN_USER_DIR=");
+        _putenv("TEMPEST_USER_DIR=");
 #else
-        unsetenv("RESOGUN_USER_DIR");
+        unsetenv("TEMPEST_USER_DIR");
 #endif
     }
 
     float ratio=0; assert(safe_area(&ratio)==0 && ratio==1.0f && safe_area(NULL)==SYSTEM_PARAMETER);
 
-    /* System parameter 1: language ID from RESOGUN_LANGUAGE (default 1 = English US, 16 = Polish) */
+    /* System parameter 1: language ID from TEMPEST_LANGUAGE (default 1 = English US, 16 = Polish) */
     int32_t lang=0;
     assert(system_param(1,&lang)==0 && lang==1);
 #ifdef _WIN32
-    _putenv("RESOGUN_LANGUAGE=16");
+    _putenv("TEMPEST_LANGUAGE=16");
 #else
-    setenv("RESOGUN_LANGUAGE","16",1);
+    setenv("TEMPEST_LANGUAGE","16",1);
 #endif
     assert(system_param(1,&lang)==0 && lang==16);
 #ifdef _WIN32
-    _putenv("RESOGUN_LANGUAGE=");
+    _putenv("TEMPEST_LANGUAGE=");
 #else
-    unsetenv("RESOGUN_LANGUAGE");
+    unsetenv("TEMPEST_LANGUAGE");
 #endif
     assert(system_param(1,&lang)==0 && lang==1);
 

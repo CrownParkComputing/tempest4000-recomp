@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// resogun-setup (Linux): sets up the release folder it sits in (tools/package.py) from the player's
-// Resogun dump, so the game starts from resogun or its menu entry.
+// tempest-setup (Linux): sets up the release folder it sits in (tools/package.py) from the player's
+// Tempest dump, so the game starts from tempest or its menu entry.
 //
 // With no arguments it asks for the game folder (the dump), the save folder, whether to skip the
 // intro logos (settings.ini skip_intro) and an optional extra DLC folder, installs, and offers
@@ -9,7 +9,7 @@
 // again to change either folder, or after unpacking a newer release over the folder.
 // With arguments it installs from the command line:
 //
-//     resogun-setup --game <dump or eboot.bin> [--save <folder>] [--copy-saves]
+//     tempest-setup --game <dump or eboot.bin> [--save <folder>] [--copy-saves]
 //                       [--dlc <folder>|--no-dlc] [--skip-intro|--play-intro] [--progress]
 //                       [--shortcut <folder>|desktop|menu]
 
@@ -32,7 +32,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr char kTitle[] = "Resogun setup";
+constexpr char kTitle[] = "Tempest setup";
 
 // The old save folder to copy from when the save folder changes and only the old one has saves.
 std::optional<fs::path> saves_to_move(const fs::path& root, const fs::path& save) {
@@ -53,7 +53,7 @@ void err(const std::wstring& s) {
 // --- command line -------------------------------------------------------------------------------
 
 constexpr wchar_t kUsage[] =
-    L"usage: resogun-setup --game <pkg or dump> [--save <folder>] [--copy-saves]\n"
+    L"usage: tempest-setup --game <pkg or dump> [--save <folder>] [--copy-saves]\n"
     L"                         [--dlc <folder>|--no-dlc] [--skip-intro|--play-intro] [--progress]\n"
     L"                         [--shortcut <folder>|desktop|menu]\n"
     L"  --game        your game .pkg, extracted into a folder next to it, or a dump you have\n"
@@ -256,7 +256,7 @@ public:
         SDL_DestroyProperties(props);
         if (!pick.error.empty())
             tell(L"No folder picker is available (" + setup::widen(pick.error) +
-                     L").\n\nRun resogun-setup in a terminal, or with --game <folder>.",
+                     L").\n\nRun tempest-setup in a terminal, or with --game <folder>.",
                  true);
         return pick.path;
     }
@@ -292,7 +292,7 @@ public:
         SDL_DestroyProperties(props);
         if (!pick.error.empty())
             tell(L"No file picker is available (" + setup::widen(pick.error) +
-                     L").\n\nRun resogun-setup in a terminal, or with --game <file.pkg>.",
+                     L").\n\nRun tempest-setup in a terminal, or with --game <file.pkg>.",
                  true);
         return pick.path;
     }
@@ -470,7 +470,7 @@ int main(int argc, char** argv) {
         return run_cli(args);
     if (isatty(STDIN_FILENO) && isatty(STDOUT_FILENO)) {
         TerminalAsker ask;
-        out(L"Resogun setup (Ctrl+C or Ctrl+D cancels)\n");
+        out(L"Tempest setup (Ctrl+C or Ctrl+D cancels)\n");
         return run_asking(ask);
     }
     // SIGTERM and SIGINT end the setup as usual (SDL would turn them into a quit event nobody reads).

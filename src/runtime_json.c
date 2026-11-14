@@ -1,5 +1,5 @@
 /* libSceJson2: sce::Json, the SDK's C++ JSON library, in the layouts the game builds them in.
- * Resogun parses PSN replies with it (friends' onlineStatus, ...): one Initializer with its own
+ * Tempest parses PSN replies with it (friends' onlineStatus, ...): one Initializer with its own
  * MemAllocator subclass, documents parsed with Parser::parse and read with operator[], count,
  * the getters and toString.
  *

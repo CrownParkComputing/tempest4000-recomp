@@ -85,14 +85,14 @@ static std::optional<std::filesystem::path> GetBundleParentDirectory() {
 }
 #endif
 
-// resogun: built on first use, not before main, so a launch that reads its save folder from
-// paths.ini (src/launcher.c) can still set RESOGUN_GPU_USER_DIR first.
+// tempest: built on first use, not before main, so a launch that reads its save folder from
+// paths.ini (src/launcher.c) can still set TEMPEST_GPU_USER_DIR first.
 static std::unordered_map<PathType, fs::path>& UserPaths() {
     static auto user_paths = [] {
-    // resogun: the port keeps GPU caches where RESOGUN_GPU_USER_DIR points.
-    const char* port_dir = std::getenv("RESOGUN_GPU_USER_DIR");
+    // tempest: the port keeps GPU caches where TEMPEST_GPU_USER_DIR points.
+    const char* port_dir = std::getenv("TEMPEST_GPU_USER_DIR");
     auto user_dir = port_dir ? std::filesystem::path(port_dir) : std::filesystem::current_path() / PORTABLE_DIR;
-    // resogun: a folder RESOGUN_GPU_USER_DIR names is created below, never swapped for
+    // tempest: a folder TEMPEST_GPU_USER_DIR names is created below, never swapped for
     // shadPS4's own (Linux took ~/.local/share/shadPS4 until the folder existed).
     if (!port_dir && !std::filesystem::exists(user_dir)) {
         // If it doesn't exist, use the standard path for the platform instead.
@@ -108,9 +108,9 @@ static std::unordered_map<PathType, fs::path>& UserPaths() {
             user_dir = std::filesystem::path(getenv("HOME")) / ".local" / "share" / "shadPS4";
         }
 #elif _WIN32
-        // resogun: never shadPS4's %APPDATA% folder (an installed shadPS4 owns it); this runs
+        // tempest: never shadPS4's %APPDATA% folder (an installed shadPS4 owns it); this runs
         // on first use, so the portable folder is created here (run.py and src/launcher.c set
-        // RESOGUN_GPU_USER_DIR).
+        // TEMPEST_GPU_USER_DIR).
         std::filesystem::create_directories(user_dir);
 #endif
     }
@@ -118,12 +118,12 @@ static std::unordered_map<PathType, fs::path>& UserPaths() {
     std::unordered_map<PathType, fs::path> paths;
 
     const auto create_path = [&](PathType shad_path, const fs::path& new_path) {
-        // resogun: with parents, so a Linux home without ~/.local/share still starts.
+        // tempest: with parents, so a Linux home without ~/.local/share still starts.
         std::filesystem::create_directories(new_path);
         paths.insert_or_assign(shad_path, new_path);
     };
 
-    // resogun: only the folders the video core uses (the runtime makes its own: savedata,
+    // tempest: only the folders the video core uses (the runtime makes its own: savedata,
     // temp0, download0); not shadPS4's cheats, patches, custom trophy and module folders.
     create_path(PathType::UserDir, user_dir);
     create_path(PathType::LogDir, user_dir / LOG_DIR);
@@ -170,8 +170,8 @@ std::string GetUserPathString(PathType shad_path) {
     return PathToUTF8String(GetUserPath(shad_path));
 }
 
-// resogun: on the first start with a shaders folder, the cache earlier releases kept elsewhere is
-// moved into it: <RESOGUN_GPU_USER_DIR>/cache/<serial> (%LOCALAPPDATA%\Resogun, ~/.cache/resogun
+// tempest: on the first start with a shaders folder, the cache earlier releases kept elsewhere is
+// moved into it: <TEMPEST_GPU_USER_DIR>/cache/<serial> (%LOCALAPPDATA%\Tempest, ~/.cache/tempest
 // or paths.ini's cache=), and on Linux shadPS4's folder, which the port used while the first
 // one did not exist. Only a folder with the port's disk_shaders.bin marker is taken, so an
 // installed shadPS4's own cache stays where it is.
@@ -222,7 +222,7 @@ static void MoveOldShaderCache(const fs::path& to, std::string_view serial) {
 
 const fs::path& GetShaderCachePath(std::string_view serial) {
     static const fs::path path = [serial] {
-        const char* dir = std::getenv("RESOGUN_SHADER_DIR");
+        const char* dir = std::getenv("TEMPEST_SHADER_DIR");
         if (!dir || !dir[0]) {
             return GetUserPath(PathType::CacheDir) / serial;
         }
@@ -262,7 +262,7 @@ std::optional<fs::path> FindGameByID(const fs::path& dir, const std::string& gam
             }
             return std::nullopt;
         }
-        // resogun: packed (ZArchive) game images are not supported by the port.
+        // tempest: packed (ZArchive) game images are not supported by the port.
         return std::nullopt;
     };
 

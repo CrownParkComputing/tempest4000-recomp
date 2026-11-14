@@ -5,7 +5,7 @@ How the runner works and how to work on it. Building, tests and packaging are in
 
 ## How it works
 
-The PS4 and the PC are both x86-64, so nothing is recompiled. Resogun's `eboot.bin` (Housemarque's
+The PS4 and the PC are both x86-64, so nothing is recompiled. Tempest's `eboot.bin` (Housemarque's
 engine, statically linked, with Wwise for audio) is mapped into memory and run directly. What
 differs is everything that code calls:
 
@@ -18,17 +18,17 @@ The game image is built from the dump by `run.py` (and by the setup in a release
 
 1. `scripts/prepare.py` strips the SELF wrapper from `eboot.bin` (the dump must be decrypted) and
    writes `out/game/boot.bin`, its report `analysis.json` and the AppContent profile `content.bin`.
-2. `scripts/link.py` links the eboot with the two modules Resogun ships in `sce_module`, `libc.prx`
+2. `scripts/link.py` links the eboot with the two modules Tempest ships in `sce_module`, `libc.prx`
    and `libSceFios2.prx`, into `boot-linked.bin`. Symbols match by NID and library identity, never by
    name; `mov rax, fs:[0]` thread-pointer loads are rewritten to GS (glibc owns FS on Linux).
 3. On a CPU without an instruction set the game uses (MOVBE, LZCNT, BMI1), `scripts/isa_rewrite.py`
    lists each such instruction for `src/isa_rewrite.c`, which patches in a stub that emulates it.
-4. `resogun` maps the image, resolves every import against the C runtime (by symbol name, from
+4. `tempest` maps the image, resolves every import against the C runtime (by symbol name, from
    `src/import_names.inc`) or the GPU core (by NID), runs each module's initializer and enters the
    game. An import with no implementation becomes a trap that prints
    `STOP: first unsupported PS4 import: <name>` and exits.
 
-Every import Resogun's three modules make is implemented, and only those: a runtime function the
+Every import Tempest's three modules make is implemented, and only those: a runtime function the
 game does not import is not kept. `python run.py check` lists any that are missing (none today).
 
 The renderer draws at the game's own resolution (`render_resolution=4k`, the default: PS4 Pro mode,
@@ -36,11 +36,11 @@ The renderer draws at the game's own resolution (`render_resolution=4k`, the def
 window in `post_process.frag`. With `sharpening=1` (the default) that pass draws into an image of the
 window's size and FSR 1 RCAS (`rcas.frag`, `host_passes/rcas_pass.cpp`) sharpens it into the frame.
 The only overlay is the PS4's system UI (save list, text entry, trophy notices), the Display Settings
-panel and the exit prompt (`gpu/shim/resogun_overlay.cpp`).
+panel and the exit prompt (`gpu/shim/tempest_overlay.cpp`).
 
 ## Running from the source tree
 
-Set `RESOGUN_GAME_DIR` to your decrypted dump (or pass `--game DIR` each time):
+Set `TEMPEST_GAME_DIR` to your decrypted dump (or pass `--game DIR` each time):
 
 ```bash
 python run.py --timeout 20
@@ -54,18 +54,18 @@ python run.py --timeout 20
 - `--guest-arg SWITCH` passes one of the engine's own command-line switches (strings in the eboot:
   `-nosplash`, `-no_video`, `-no_level_intro`, ...).
 - Saves go to `user/` (`--user DIR`), settings to `user/settings.ini`. Shader caches go to `shaders/`
-  next to the exe (`out/shaders`; an installed copy's is next to `resogun-setup`), and
-  `RESOGUN_SHADER_DIR` moves it. On the first start with an empty one, the cache earlier releases
+  next to the exe (`out/shaders`; an installed copy's is next to `tempest-setup`), and
+  `TEMPEST_SHADER_DIR` moves it. On the first start with an empty one, the cache earlier releases
   kept in `<GPU folder>/cache/CUSA00038` is moved in (on Linux also shadPS4's folder, which was used
-  while `~/.cache/resogun` did not exist). The GPU library's logs and screenshots stay in one folder
-  per PC, `%LOCALAPPDATA%\Resogun` (`~/.cache/resogun`), shared with installed copies
-  (`RESOGUN_GPU_USER_DIR` moves it).
+  while `~/.cache/tempest` did not exist). The GPU library's logs and screenshots stay in one folder
+  per PC, `%LOCALAPPDATA%\Tempest` (`~/.cache/tempest`), shared with installed copies
+  (`TEMPEST_GPU_USER_DIR` moves it).
 - Every `settings.ini` key has an environment variable that overrides it, named in
   `settings.example.ini`. A variable left set in a shell keeps overriding the panel:
-  `RESOGUN_VBLANK_HZ` prints a warning at start for that reason.
-- `RESOGUN_VERBOSE=1` logs every routine event (threads, semaphores, memory maps, module loads).
+  `TEMPEST_VBLANK_HZ` prints a warning at start for that reason.
+- `TEMPEST_VERBOSE=1` logs every routine event (threads, semaphores, memory maps, module loads).
   `run.py` and the debug package's `diagnose/start.bat` turn it on.
-- Hang dump: once a frame has been shown, a picture held for `RESOGUN_HANG_DUMP` seconds (default 20,
+- Hang dump: once a frame has been shown, a picture held for `TEMPEST_HANG_DUMP` seconds (default 20,
   `0` turns it off) logs every thread's name, CPU time and frames (`Hang:` lines, innermost first).
   The `--timeout` watchdog prints the same list before it ends a run.
 
@@ -86,11 +86,11 @@ import bound to a GOT slot.
 
 ## Frame rate
 
-Resogun's game logic advances once per frame, by a step its frame clock fixes: the boot passes the
+Tempest's game logic advances once per frame, by a step its frame clock fixes: the boot passes the
 constant 59.94 and allows no frame skip, so the game's speed is the rate at which it flips. Raising
 the PS4 vblank alone (shadPS4's approach) runs the game faster, not smoother.
 
-`frame_rate` (30, 60, 90, 120, 144 or 180) sets both. `ResogunSettings::EffectiveFrameRate()` lowers it to what the
+`frame_rate` (30, 60, 90, 120, 144 or 180) sets both. `TempestSettings::EffectiveFrameRate()` lowers it to what the
 display refreshes at, unless VSync is off with tearing allowed; the video out's vblank follows it
 (`GetVblankFrequency`, live), and at each flip `runtime_game_frame_rate()` (`src/runtime_game.c`)
 calls the engine's own `set_fps(rate x 0.999)` through the frame clock's vtable (the global at image
@@ -115,7 +115,7 @@ whole queue: about 160 a second, 4 ms of GPU idle per frame on a Radeon 890M (73
 them go ahead without downloading and keeps a copy of the page's GPU-written bytes; the page's next
 upload (`EmitUploadRange`) leaves out those that the guest has not changed since. Relaxed readback
 mode only (the default), where pages are never read-protected. Toggle `WriteMerge` (bit 50) turns
-it off; `RESOGUN_FRAME_STATS=1` prints the merged writes per second, `RESOGUN_PERF_DIAG=1` the
+it off; `TEMPEST_FRAME_STATS=1` prints the merged writes per second, `TEMPEST_PERF_DIAG=1` the
 downloads that remain with the guest instruction and the GPU writer behind each.
 
 ### Render resolution
@@ -125,14 +125,14 @@ the display buffers and the final pass: patched to 1280x720, the scene's passes 
 1920x1080 for the same GPU time, so there is no 720p mode. The scene's sizes are fixed in the
 render scripts in the game data: each target is created by name with its size (`mrt_albedo`
 1920x1080, or 1920x2160 checkerboard in PS4 Pro mode; `ssao_*` at half; `menu_overlay` for the pause
-menu). `RESOGUN_VERBOSE=1` lists the ones a wide picture widens.
+menu). `TEMPEST_VERBOSE=1` lists the ones a wide picture widens.
 
 ### Aspect ratios (4:3, 16:10, 21:9, 32:9)
 
 The `aspect_ratio` setting picks the picture's shape: in windowed mode the window has it (its size
 list holds only sizes of that ratio), and the fullscreen modes fit it into the screen
-(`ResogunSettings::PickFullscreen`: borderless the desktop, exclusive the largest mode of the ratio,
-bars otherwise). A shape other than 16:9 is made at start: `ResogunSettings::WideWidth4k` turns it
+(`TempestSettings::PickFullscreen`: borderless the desktop, exclusive the largest mode of the ratio,
+bars otherwise). A shape other than 16:9 is made at start: `TempestSettings::WideWidth4k` turns it
 into a width at 2160 lines (2880 for 4:3, 3456 for 16:10, 5120 for 2560x1080, 7680 for 32:9;
 3840 for 16:9). These
 things make the engine use it:
@@ -169,7 +169,7 @@ With `skip_intro=1` (the default) the loader passes `-nosplash`, then presses Cr
 title screen appears: the AvPlayer opening `title.mp4` marks it (`runtime_pad_title_movie`,
 `src/runtime_pad.c`). A start lands in the main menu.
 
-On the title screen, Back (Circle, B, Escape) asks "Exit Resogun?" (`title_back_exits=1`); F4 asks
+On the title screen, Back (Circle, B, Escape) asks "Exit Tempest?" (`title_back_exits=1`); F4 asks
 anywhere. The prompt is drawn by the overlay and takes the input while open; Yes pushes the same
 quit event as closing the window. Holding Select (SDL's Back button) for two seconds opens the
 Display Settings panel (F10 too): the button's own press is held back while it is down, and a release
@@ -177,12 +177,12 @@ before two seconds sends it to the game as a short tap.
 
 ## Save data, DLC and trophies
 
-Saves are folders under `<save>/savedata/<user>/CUSA00038/` (`src/runtime_savedata.c`); Resogun keeps
+Saves are folders under `<save>/savedata/<user>/CUSA00038/` (`src/runtime_savedata.c`); Tempest keeps
 one, `savedata`. The save list dialog (`runtime_services.c`) lists them newest first.
 
-Resogun's 22 add-ons (ships and skins) are entitlement-only: the game asks
+Tempest's 22 add-ons (ships and skins) are entitlement-only: the game asks
 `sceAppContentGetAddcontInfo` about each label it knows, and an add-on is installed when a folder of
-that name exists in `<save>/addcont/` or in the extra DLC folder (`--dlc`, `RESOGUN_DLC_DIR`;
+that name exists in `<save>/addcont/` or in the extra DLC folder (`--dlc`, `TEMPEST_DLC_DIR`;
 shadPS4's `addcont` with its `CUSA00038` folder works as it is). Nothing is read from those folders.
 
 Trophies come from the dump's `sce_sys/trophy/trophy00.trp` (65, TROP000-064); unlocks are kept in
@@ -190,42 +190,42 @@ Trophies come from the dump's `sce_sys/trophy/trophy00.trp` (65, TROP000-064); u
 
 ## Release folder and setup
 
-`resogun-setup` (`setup/`) runs `prepare/run.py prepare` into `game/` beside it, rewrites the
+`tempest-setup` (`setup/`) runs `prepare/run.py prepare` into `game/` beside it, rewrites the
 game's instructions for this CPU if needed, writes `settings.ini` from the template when there is
 none, sets its `skip_intro` line from the window's checkbox, and writes `paths.ini` with the game and
 save folders and, when one is chosen, `dlc=`. The command line does the same as the window:
-`resogun-setup --help`.
+`tempest-setup --help`.
 
-Started with no arguments, `resogun` reads `paths.ini` and builds the command line `run.py`
-would pass (`src/launcher.c`); without a console its output goes to `log/resogun.log` in the save
+Started with no arguments, `tempest` reads `paths.ini` and builds the command line `run.py`
+would pass (`src/launcher.c`); without a console its output goes to `log/tempest.log` in the save
 folder. It also watches the game: it starts the same command line as a child (by `fork` with
 `PR_SET_PDEATHSIG`, so it ends if the launcher is killed), and when the
 game ends with an exit code other than 0 it notes the code in the log, copies the log to
-`log/crash-<date>-<time>.log` and says so in a message box. `RESOGUN_CRASH_WATCH=0` turns that off.
+`log/crash-<date>-<time>.log` and says so in a message box. `TEMPEST_CRASH_WATCH=0` turns that off.
 
 Preparing the game needs Python 3.10 or newer with its standard library only; releases bundle
 python.org's embeddable Python in `prepare/python`. The CPU rewrite also needs `iced-x86`, which only
-CPUs missing an instruction set ever use. The icon of both exes is `res/resogun.ico`
+CPUs missing an instruction set ever use. The icon of both exes is `res/tempest.ico`
 (`tools/make_app_icon.py` builds it from artwork).
 
 ## Input
 
 The pad and keyboard layouts are fixed tables in `src/runtime_pad.c` (README "Controls"): gamepads map
-by button position, keys by physical position. `resogun --gamepad` prints the connected pad and its
+by button position, keys by physical position. `tempest --gamepad` prints the connected pad and its
 labels.
 
-Scripted input for automated runs: `RESOGUN_PAD_FILE` (held buttons and stick values, re-read when
-the file changes), `RESOGUN_PAD_RECORD` (F9 records the pad) and `RESOGUN_PAD_REPLAY`.
+Scripted input for automated runs: `TEMPEST_PAD_FILE` (held buttons and stick values, re-read when
+the file changes), `TEMPEST_PAD_RECORD` (F9 records the pad) and `TEMPEST_PAD_REPLAY`.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
 | `src/` | Loader (`loader.c`), launcher (`launcher.c`), the runtime (`runtime_*.c`) and the CPU rewrite (`isa_*.c`) |
-| `gpu/` | shadPS4's video core (`shadps4/`, changes marked `// resogun:`), the shim and overlay around it (`shim/`), CMake build |
+| `gpu/` | shadPS4's video core (`shadps4/`, changes marked `// tempest:`), the shim and overlay around it (`shim/`), CMake build |
 | `build.sh`, `build_linux.sh` | The build (`build.sh`) and the local build, test and boot-check wrapper ([building.md](building.md)) |
 | `scripts/` | Building the game image: `prepare.py`, `link.py`, `isa_rewrite.py` |
-| `setup/` | `resogun-setup`, which sets up a release folder from a player's dump |
+| `setup/` | `tempest-setup`, which sets up a release folder from a player's dump |
 | `res/` | The application icon, used for the desktop entry |
 | `packaging/` | `diagnose/`, the glitch kit the debug package ships |
 | `.github/` | CI (`workflows/build.yml`) and its scripts: `ci-deps.sh` (Linux build dependencies), `smoke-test.sh` (a release on fresh distros) |

@@ -2,8 +2,8 @@
  * one machine-code stub per site in an area next to the image and patches each site with a jmp
  * into its stub (or an int3). The stub saves the guest's registers, calls isa_emulate and jumps
  * back. Runs at load time, before the image is protected; libc is fine here. */
-#ifndef RESOGUN_ISA_REWRITE_H
-#define RESOGUN_ISA_REWRITE_H
+#ifndef TEMPEST_ISA_REWRITE_H
+#define TEMPEST_ISA_REWRITE_H
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

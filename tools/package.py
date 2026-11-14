@@ -4,17 +4,17 @@
 
     python tools/package.py [--out dist] [--zip] [--debug]
 
-The same folder holds resogun and resogun-setup (rpath $ORIGIN/lib), the shared libraries they
+The same folder holds tempest and tempest-setup (rpath $ORIGIN/lib), the shared libraries they
 need in lib/ (ldd, less the host's: glibc, libstdc++, Vulkan, the display and audio stacks, which
-must match its drivers), resogun.png for the desktop entry and prepare/ without Python: the setup
+must match its drivers), tempest.png for the desktop entry and prepare/ without Python: the setup
 runs the system's python3. --zip writes <release>-linux.tar.gz (and -symbols, -debug), which keeps
 the files' exec bits and symlinks. Needs ldd, patchelf and strip.
 
 The folder is what a player unpacks: they need neither this repo nor Python of their own beyond
-python3. They run resogun-setup, which prepares the game image from their own .pkg or dump
-(prepare/run.py), and then start resogun or the desktop entry it offers.
+python3. They run tempest-setup, which prepares the game image from their own .pkg or dump
+(prepare/run.py), and then start tempest or the desktop entry it offers.
 
-    resogun, resogun-setup   debug info stripped
+    tempest, tempest-setup   debug info stripped
     lib/            the shared libraries they need, with their own RUNPATH
     release.txt     this release; the setup stamps the image it prepares with it (src/launcher.c)
     recomplauncher.json  how RecompLauncher (recomplauncher.com) sets up, starts and configures it
@@ -23,7 +23,7 @@ python3. They run resogun-setup, which prepares the game image from their own .p
 
 --debug keeps the debug info in the binaries instead. A plain --zip also writes
 <release>-symbols.tar.gz with the unstripped binaries, which resolve the offsets in a player's
-resogun.log.
+tempest.log.
 
 What the setup adds later (game/, paths.ini, settings.ini) is left alone, so dist/ also works as
 the developer's own install. Never ship game/: it is built from a player's own .pkg or dump.
@@ -41,7 +41,7 @@ import time
 import zipfile
 
 PORT = Path(__file__).resolve().parent.parent
-EXES = ('resogun', 'resogun-setup')
+EXES = ('tempest', 'tempest-setup')
 # Linux libraries the host provides: bundled, they break its GPU drivers, display connection or audio
 # (libstdc++ too: Mesa needs the one it was built with, at least as new as this build's).
 HOST_LIBS = re.compile(r'^(linux-vdso|ld-linux.*|libc|libm|libdl|librt|libpthread|libresolv|libutil|libnsl|libanl'
@@ -49,10 +49,10 @@ HOST_LIBS = re.compile(r'^(linux-vdso|ld-linux.*|libc|libm|libdl|librt|libpthrea
                        r'|libX11|libX11-xcb|libxcb.*|libXau|libXdmcp|libXext|libXfixes|libXrender|libXi|libXcursor'
                        r'|libXrandr|libwayland-.*|libasound|libudev|libpulse.*|libfontconfig|libfreetype'
                        r'|libnvidia-.*|libcuda|libz)\.so')
-ICON = PORT / 'res' / 'resogun.ico'
+ICON = PORT / 'res' / 'tempest.ico'
 # What prepare/run.py needs: the scripts and the template of settings.ini.
 PREPARE_FILES = ['run.py', 'settings.example.ini', *sorted(f'scripts/{p.name}' for p in (PORT / 'scripts').glob('*.py'))]
-README = """Resogun on PC (Linux)
+README = """Tempest on PC (Linux)
 Release {release}
 
 You need the .pkg of your own copy of the PS4 game (CUSA00038, version 1.10). The setup extracts
@@ -61,13 +61,13 @@ too, the folder with eboot.bin, sce_module, sce_sys, audio.pck and stream.dat. N
 included. Add-ons you own (ships and skins) need no files: a DLC folder with their sce_sys folders
 lists them.
 
-1. Run resogun-setup (from a file manager, or ./resogun-setup in a terminal). Pick your .pkg
+1. Run tempest-setup (from a file manager, or ./tempest-setup in a terminal). Pick your .pkg
    (or a dump you already have) and where your saves go. It prepares the game and offers an
    entry in your application menu (Steam's "Add a Non-Steam Game" lists it too).
-   From a terminal it also takes: ./resogun-setup --game <pkg or dump> [--save <folder>]
-2. Start the game from the menu entry, or run ./resogun.
+   From a terminal it also takes: ./tempest-setup --game <pkg or dump> [--save <folder>]
+2. Start the game from the menu entry, or run ./tempest.
 
-Run resogun-setup again to change the game or save folder. After unpacking a newer release
+Run tempest-setup again to change the game or save folder. After unpacking a newer release
 over this folder, run it once more: it keeps your folders and settings.
 
 In the game: F10, or Select (Share/View) held for two seconds, opens the display settings (window,
@@ -75,8 +75,8 @@ resolution, VSync, 60/90/120/144/180 FPS); F4, or Back on the title screen, asks
 
 settings.ini (made by the setup) holds the window, audio and control options; one in your save
 folder is read instead, and the display settings save there. If the game stops, the reason is in
-resogun.log, in the log folder of your save folder. Shader caches are kept in the shaders
-folder next to resogun-setup.
+tempest.log, in the log folder of your save folder. Shader caches are kept in the shaders
+folder next to tempest-setup.
 
 Needs Linux x86-64 with glibc 2.39 or newer (SteamOS 3.7, Ubuntu 24.04, Debian 13, Fedora 40 or
 newer), python3 3.10+ for the setup, a CPU with AVX and a GPU with a Vulkan 1.3 driver.
@@ -167,7 +167,7 @@ def ico_png(ico, size=256):
     raise SystemExit(f'{ico}: no {size}px PNG frame')
 
 
-def release_name(product='resogun-pc'):
+def release_name(product='tempest-pc'):
     """<product>-<commit>-<date>, or -<commit>-dirty-<date>-<time> for uncommitted work:
     what release.txt and the zip are named after. Two releases from one dirty tree differ by the
     packaging time, so the launcher asks for the setup again after either is unpacked."""
@@ -184,7 +184,7 @@ def copy(source, target):
 
 
 def strip(source, target, mode='--strip-all'):
-    """Copies an exe without its debug info (RelWithDebInfo DWARF is ~95% of resogun.exe).
+    """Copies an exe without its debug info (RelWithDebInfo DWARF is ~95% of tempest.exe).
     Crash logs give exe+offset, which the unstripped build resolves."""
     target.parent.mkdir(parents=True, exist_ok=True)
     tool = linux_tool('llvm-strip-18', 'llvm-strip', 'strip')
@@ -229,8 +229,8 @@ def main():
             strip(lib, target, '--strip-unneeded')
         set_rpath(target, '$ORIGIN')
         shipped.append(f'lib/{lib.name}')
-    (out / 'resogun.png').write_bytes(ico_png(ICON))
-    shipped.append('resogun.png')
+    (out / 'tempest.png').write_bytes(ico_png(ICON))
+    shipped.append('tempest.png')
     prepare = out / 'prepare'
     python = prepare / 'python'
     for item in prepare.iterdir() if prepare.is_dir() else ():

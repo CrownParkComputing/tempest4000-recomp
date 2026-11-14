@@ -10,9 +10,9 @@
 #include <ranges>
 #include <string>
 #include <unordered_set>
-#include "resogun_overlay.h"
-#include "resogun_threads.h"
-#include "resogun_toggles.h"
+#include "tempest_overlay.h"
+#include "tempest_threads.h"
+#include "tempest_toggles.h"
 
 #include "common/hash.h"
 #include "common/thread.h"
@@ -372,9 +372,9 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supports_shader_subgroup_clock = instance_.IsShaderSubgroupClockSupported(),
         .needs_manual_interpolation = instance.IsFragmentShaderBarycentricSupported() &&
                                       instance.GetDriverID() == vk::DriverId::eNvidiaProprietary,
-        // resogun: older NVIDIA (Pascal) has no barycentrics; RESOGUN_INTERP_INT_FIX=0/1 overrides.
+        // tempest: older NVIDIA (Pascal) has no barycentrics; TEMPEST_INTERP_INT_FIX=0/1 overrides.
         .needs_integer_interpolation_fix = [&] {
-            if (const char* env = std::getenv("RESOGUN_INTERP_INT_FIX")) {
+            if (const char* env = std::getenv("TEMPEST_INTERP_INT_FIX")) {
                 return env[0] == '1';
             }
             return !instance.IsFragmentShaderBarycentricSupported() &&
@@ -392,24 +392,24 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
     ASSERT_MSG(cache_result == vk::Result::eSuccess, "Failed to create pipeline cache: {}",
                vk::to_string(cache_result));
     pipeline_cache = std::move(cache);
-    // resogun: shaders and pipelines compile on these threads while the game runs.
+    // tempest: shaders and pipelines compile on these threads while the game runs.
     {
-        const auto count = std::clamp(ResogunThreads::Available() / 2, 1u, 6u);
-        const auto capture_count = std::min(2u, std::max(1u, ResogunThreads::Available() / 4));
+        const auto count = std::clamp(TempestThreads::Available() / 2, 1u, 6u);
+        const auto capture_count = std::min(2u, std::max(1u, TempestThreads::Available() / 4));
         for (unsigned i = 0; i < count; ++i) {
             auto [result, worker_cache] = instance.GetDevice().createPipelineCacheUnique({});
             ASSERT_MSG(result == vk::Result::eSuccess, "Failed to create compiler pipeline cache");
             worker_pipeline_caches.push_back(std::move(worker_cache));
         }
         capture_compiler = std::make_unique<AsyncCompiler>(capture_count, 8, [](unsigned index) {
-            Common::SetCurrentThreadName(("resogun:ShaderCapture" + std::to_string(index)).c_str());
+            Common::SetCurrentThreadName(("tempest:ShaderCapture" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::High);
         });
         compiler = std::make_unique<AsyncCompiler>(count, 64, [](unsigned index) {
-            Common::SetCurrentThreadName(("resogun:ShaderCompile" + std::to_string(index)).c_str());
+            Common::SetCurrentThreadName(("tempest:ShaderCompile" + std::to_string(index)).c_str());
             Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         });
-        LOG_INFO(Render_Vulkan, "resogun: async graphics compilation ready ({} capture, {} compile workers)",
+        LOG_INFO(Render_Vulkan, "tempest: async graphics compilation ready ({} capture, {} compile workers)",
                  capture_count, count);
     }
 }
@@ -421,16 +421,16 @@ PipelineCache::~PipelineCache() {
     FinishCompilations();
 }
 
-// resogun: shader/pipeline compile time on the GPU thread, reported by RESOGUN_FRAME_STATS.
-std::atomic<u64> g_resogun_compile_ns;
-std::atomic<u32> g_resogun_compiles;
-std::atomic<u64> g_resogun_capture_ns, g_resogun_async_ns, g_resogun_compile_wait_ns;
-std::atomic<u64> g_resogun_snapshot_ns, g_resogun_guest_wait_ns;
-std::atomic<u32> g_resogun_pool_reuses;
-std::atomic<u32> g_resogun_pending_draws;
-// resogun: waits of the GPU thread for an async build at the skip budget, and their time.
-std::atomic<u32> g_resogun_build_waits;
-std::atomic<u64> g_resogun_build_wait_ns;
+// tempest: shader/pipeline compile time on the GPU thread, reported by TEMPEST_FRAME_STATS.
+std::atomic<u64> g_tempest_compile_ns;
+std::atomic<u32> g_tempest_compiles;
+std::atomic<u64> g_tempest_capture_ns, g_tempest_async_ns, g_tempest_compile_wait_ns;
+std::atomic<u64> g_tempest_snapshot_ns, g_tempest_guest_wait_ns;
+std::atomic<u32> g_tempest_pool_reuses;
+std::atomic<u32> g_tempest_pending_draws;
+// tempest: waits of the GPU thread for an async build at the skip budget, and their time.
+std::atomic<u32> g_tempest_build_waits;
+std::atomic<u64> g_tempest_build_wait_ns;
 namespace {
 struct PhaseTimer {
     std::atomic<u64>& counter;
@@ -449,27 +449,27 @@ struct PhaseTimer {
 struct CompileTimer {
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~CompileTimer() {
-        g_resogun_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        g_tempest_compile_ns += u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - start)
                                    .count());
-        ++g_resogun_compiles;
+        ++g_tempest_compiles;
     }
 };
 
-// resogun: set while GetGraphicsPipeline serves a draw that must not be skipped.
+// tempest: set while GetGraphicsPipeline serves a draw that must not be skipped.
 thread_local bool must_draw = false;
 
-// resogun: GPU frames a draw may be skipped while its build runs, after which the GPU thread
+// tempest: GPU frames a draw may be skipped while its build runs, after which the GPU thread
 // waits for it. Draws that must not be skipped have no budget.
 int SkipFrames() {
     return must_draw ? 0 : 1;
 }
 
-// resogun: whether draws needing a build were skipped for the budget of GPU frames, counted
+// tempest: whether draws needing a build were skipped for the budget of GPU frames, counted
 // from `since` (set to this frame by the first skip when unset).
 bool SkipBudgetSpent(u64& since) {
     const int budget = SkipFrames();
-    const u64 frame = ResogunStats::gpu_frames.load(std::memory_order_relaxed);
+    const u64 frame = TempestStats::gpu_frames.load(std::memory_order_relaxed);
     if (since == ~u64{}) {
         since = frame;
     }
@@ -478,8 +478,8 @@ bool SkipBudgetSpent(u64& since) {
 
 template <typename Job>
 void WaitForBuild(const Job& job) {
-    PhaseTimer waiting{g_resogun_build_wait_ns};
-    ++g_resogun_build_waits;
+    PhaseTimer waiting{g_tempest_build_wait_ns};
+    ++g_tempest_build_waits;
     job.Wait();
 }
 
@@ -503,7 +503,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     if (!compiler->HasCapacity()) {
         return false;
     }
-    PhaseTimer snapshot{g_resogun_snapshot_ns};
+    PhaseTimer snapshot{g_tempest_snapshot_ns};
     auto build = std::make_shared<AsyncShaderCompilation>();
     build->device = instance.GetDevice();
     build->code.assign(params.code.begin(), params.code.end());
@@ -519,7 +519,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     build->permutation = permutation;
     build->initial = initial;
     build->program = &program;
-    build->since = ResogunStats::gpu_frames.load(std::memory_order_relaxed);
+    build->since = TempestStats::gpu_frames.load(std::memory_order_relaxed);
     if (specialization) {
         build->spec = *specialization;
     }
@@ -527,13 +527,13 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
     snapshot.Stop();
     AsyncJob<bool> capture_job;
     if (!capture_job.Start(*capture_compiler, [this, build, binding] {
-        PhaseTimer capture{g_resogun_capture_ns};
+        PhaseTimer capture{g_tempest_capture_ns};
         auto [pools, reused] = compiler_pools.Acquire();
         build->pools = std::move(pools);
         if (reused) {
-            ++g_resogun_pool_reuses;
+            ++g_tempest_pool_reuses;
         }
-        // resogun: the GPU thread waits until all guest reads and specialization are captured.
+        // tempest: the GPU thread waits until all guest reads and specialization are captured.
         build->ir.emplace(Shader::TranslateProgram(build->code, *build->pools, build->info,
                                                    build->runtime, profile));
         build->spec = Shader::StageSpecialization(build->info, build->runtime, profile, binding);
@@ -543,7 +543,7 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         return false;
     }
     {
-        PhaseTimer waiting{g_resogun_guest_wait_ns};
+        PhaseTimer waiting{g_tempest_guest_wait_ns};
         capture_job.Wait();
     }
     if (!capture_job.Poll()) {
@@ -553,12 +553,12 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
             specialization->info = &program.info;
             program.retry_permutations.push_back(std::move(*specialization));
         }
-        LOG_ERROR(Render_Vulkan, "resogun: shader {:#x}/{} capture failed: {}; retrying on the GPU thread",
+        LOG_ERROR(Render_Vulkan, "tempest: shader {:#x}/{} capture failed: {}; retrying on the GPU thread",
                   params.hash, permutation, capture_job.Error());
         return false;
     }
     const bool queued = build->job.Start(*compiler, [this, build] {
-        PhaseTimer compile{g_resogun_async_ns};
+        PhaseTimer compile{g_tempest_async_ns};
         Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch};
         auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, build->runtime, *build->ir,
                                                     build->binding);
@@ -595,7 +595,7 @@ bool PipelineCache::BuildNow(Program& program, AsyncShaderCompilation* build) {
     return true;
 }
 
-// resogun: an index a pending build holds is taken (permutations publish in any order).
+// tempest: an index a pending build holds is taken (permutations publish in any order).
 size_t PipelineCache::NewPermutationIndex(const Program& program) const {
     const auto taken = [&](size_t index) {
         return std::ranges::any_of(program.pending,
@@ -615,7 +615,7 @@ size_t PipelineCache::NewPermutationIndex(const Program& program) const {
     return index;
 }
 
-// resogun: the corner note on shader translations (ResogunOverlay), when anything changed. Runs at
+// tempest: the corner note on shader translations (TempestOverlay), when anything changed. Runs at
 // the start of each lookup, so a compile started by the previous draw shows from the next one.
 void PipelineCache::ReportCompiles() {
     const u32 pending = u32(pending_shaders.size());
@@ -623,7 +623,7 @@ void PipelineCache::ReportCompiles() {
         build_waits == build_waits_reported) {
         return;
     }
-    ResogunOverlay::NoteShaderCompiles(pending, u32(compiles_started - compiles_reported),
+    TempestOverlay::NoteShaderCompiles(pending, u32(compiles_started - compiles_reported),
                                            u32(build_waits - build_waits_reported));
     compiles_reported = compiles_started;
     build_waits_reported = build_waits;
@@ -653,7 +653,7 @@ void PipelineCache::PublishShaders(bool wait) {
                     program->retry_permutations.push_back(std::move(build->spec));
                 }
                 LOG_ERROR(Render_Vulkan,
-                          "resogun: shader {:#x}/{} compilation failed: {}; retrying on the GPU thread",
+                          "tempest: shader {:#x}/{} compilation failed: {}; retrying on the GPU thread",
                           hash, build->permutation, build->job.Error());
                 retire();
             } else {
@@ -696,8 +696,8 @@ void PipelineCache::PublishGraphics(bool wait) {
                 ++it;
                 continue;
             }
-            // resogun: the next draw builds it on the GPU thread.
-            LOG_ERROR(Render_Vulkan, "resogun: pipeline {:#x} compilation failed: {}; retrying on the GPU thread",
+            // tempest: the next draw builds it on the GPU thread.
+            LOG_ERROR(Render_Vulkan, "tempest: pipeline {:#x} compilation failed: {}; retrying on the GPU thread",
                       std::hash<GraphicsPipelineKey>{}(it.key()), build->job.Error());
             graphics_misses[it.key()].failures = 1;
             it = pending_graphics.erase(it);
@@ -728,7 +728,7 @@ void PipelineCache::FinishCompilations() {
         }
         const auto result = instance.GetDevice().mergePipelineCaches(*pipeline_cache, sources);
         if (result != vk::Result::eSuccess) {
-            LOG_ERROR(Render_Vulkan, "resogun: compiler cache merge failed: {}", vk::to_string(result));
+            LOG_ERROR(Render_Vulkan, "tempest: compiler cache merge failed: {}", vk::to_string(result));
         }
     }
 }
@@ -754,7 +754,7 @@ void PipelineCache::ReportCompilerStats() {
                     "%.1f ms, compile %.1f ms; pools retained %zu, reused %u\n",
                     capture_compiler->Depth(), compiler->Depth(),
                     capture_compiler->QueueWaitNs() / 1e6, compiler->QueueWaitNs() / 1e6,
-                    compiler_pools.Retained(), g_resogun_pool_reuses.exchange(0));
+                    compiler_pools.Retained(), g_tempest_pool_reuses.exchange(0));
     }
 }
 
@@ -825,7 +825,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
     sel.draw_indirect_params = params;
     if (!RefreshGraphicsKey(sel)) {
         if (sel.compilation_pending) {
-            ++g_resogun_pending_draws;
+            ++g_tempest_pending_draws;
         }
         miss_reason = sel.compilation_pending ? "stage program compiling or failed" : "stages unsupported";
         return nullptr;
@@ -836,12 +836,12 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         if (found != graphics_pipelines.end()) {
             return found->second.get();
         }
-        // resogun: the draw is skipped while its pipeline builds, for at most
+        // tempest: the draw is skipped while its pipeline builds, for at most
         // SkipFrames() GPU frames; then the GPU thread waits for the build, or builds
         // it here when none could be queued or the async one failed.
         const u8 failures = graphics_misses[sel.graphics_key].failures;
         if (failures == 0 && !pending_graphics.contains(sel.graphics_key) && compiler->HasCapacity()) {
-            PhaseTimer capture{g_resogun_snapshot_ns};
+            PhaseTimer capture{g_tempest_snapshot_ns};
             auto build = std::make_shared<AsyncGraphicsCompilation>();
             build->selection = sel;
             build->selection.regs = nullptr;
@@ -858,7 +858,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
             const bool queued = build->job.Start(*compiler, [this, build] {
                 // Only the vertex stage uses fetch-shader guest pointers during pipeline construction.
                 Shader::Gcn::ScopedFetchShaderSnapshot snapshot{build->fetch[u32(SwStage::Vertex)]};
-                PhaseTimer compile{g_resogun_async_ns};
+                PhaseTimer compile{g_tempest_async_ns};
                 auto& s = build->selection;
                 build->pipeline = std::make_unique<GraphicsPipeline>(
                     instance, scheduler, desc_heap, profile, s.graphics_key,
@@ -872,7 +872,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         if (failures == 2 ||
             (failures == 0 && !SkipBudgetSpent(graphics_misses[sel.graphics_key].since))) {
-            ++g_resogun_pending_draws;
+            ++g_tempest_pending_draws;
             miss_reason = failures == 2 ? "pipeline failed" : "pipeline compiling";
             return nullptr;
         }
@@ -888,7 +888,7 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         }
         retry = graphics_misses[sel.graphics_key].failures == 1;
         if (graphics_misses[sel.graphics_key].failures == 2) {
-            ++g_resogun_pending_draws;
+            ++g_tempest_pending_draws;
             miss_reason = "pipeline failed";
             return nullptr;
         }
@@ -908,15 +908,15 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
         if (!retry) {
             create();
         } else {
-            // resogun: after an async failure; a second one drops the key's draws for the session.
+            // tempest: after an async failure; a second one drops the key's draws for the session.
             try {
                 create();
             } catch (...) {
-                LOG_ERROR(Render_Vulkan, "resogun: pipeline {:#x} failed on the GPU thread too: {}",
+                LOG_ERROR(Render_Vulkan, "tempest: pipeline {:#x} failed on the GPU thread too: {}",
                           pipeline_hash, ErrorText(std::current_exception()));
                 graphics_pipelines.erase(sel.graphics_key);
                 graphics_misses[sel.graphics_key].failures = 2;
-                ++g_resogun_pending_draws;
+                ++g_tempest_pending_draws;
                 miss_reason = "pipeline failed";
                 return nullptr;
             }
@@ -979,7 +979,7 @@ bool PipelineCache::RefreshGraphicsKey(PipelineSelection& sel) {
     const auto& regs = (*sel.regs);
     auto& key = sel.graphics_key;
 
-    // resogun: a depth/stencil buffer that cannot affect the draw is not attached: on the PC a
+    // tempest: a depth/stencil buffer that cannot affect the draw is not attached: on the PC a
     // smaller one would crop a full-screen pass (eltutz, vk_depth_stencil_state.h).
     const bool db_enabled = GetEffectiveDepthStencilState(regs).needs_attachment;
 
@@ -1256,7 +1256,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
                                                 Shader::Backend::Bindings& binding) {
     auto runtime_info = BuildRuntimeInfo(sel, hw_stage, sw_stage);
     if (sel.worker) {
-        // resogun: draw-preparation worker: look up only, with the worker's own Info copy.
+        // tempest: draw-preparation worker: look up only, with the worker's own Info copy.
         auto& worker = *sel.worker;
         std::shared_lock lk{programs_mutex};
         const auto found_program = program_cache.find(params.hash);
@@ -1301,7 +1301,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
     bool compile_async = AsyncCompilation() && hw_stage != HwStage::Compute &&
                          !sel.regs->stage_enable.hs_en && !EmulatorSettings.IsShaderCollect();
-    // resogun: GPU-thread builds after an async failure catch a second one, which is final.
+    // tempest: GPU-thread builds after an async failure catch a second one, which is final.
     const auto compile = [&](Shader::Info& info, size_t perm_idx, bool retry) -> vk::ShaderModule {
         if (!retry) {
             return CompileModule(info, runtime_info, params.code, perm_idx, binding);
@@ -1309,12 +1309,12 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
         try {
             return CompileModule(info, runtime_info, params.code, perm_idx, binding);
         } catch (...) {
-            LOG_ERROR(Render_Vulkan, "resogun: shader {:#x}/{} failed on the GPU thread too: {}",
+            LOG_ERROR(Render_Vulkan, "tempest: shader {:#x}/{} failed on the GPU thread too: {}",
                       params.hash, perm_idx, ErrorText(std::current_exception()));
             return {};
         }
     };
-    // resogun: draws needing a program's initial build are skipped for at most
+    // tempest: draws needing a program's initial build are skipped for at most
     // SkipFrames() GPU frames; then it is waited for, or built below without async.
     bool retry = false;
     if (compile_async && it_pgm == program_cache.end()) {
@@ -1339,7 +1339,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     }
     if (!compile_async && it_pgm != program_cache.end() && !it_pgm->second->pending.empty()) {
         {
-            PhaseTimer waiting{g_resogun_compile_wait_ns};
+            PhaseTimer waiting{g_tempest_compile_wait_ns};
             for (const auto& build : it_pgm->second->pending) {
                 build->job.Wait();
             }
@@ -1398,7 +1398,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
 
     vk::ShaderModule module{};
 
-    // resogun: consecutive draws of a program almost always use the same permutation.
+    // tempest: consecutive draws of a program almost always use the same permutation.
     auto it = program->last_used < program->modules.size() &&
                       program->modules[program->last_used].spec == spec
                   ? program->modules.begin() + program->last_used
@@ -1406,7 +1406,7 @@ PipelineCache::Result PipelineCache::GetProgram(PipelineSelection& sel, HwStage 
     if (it != program->modules.end()) {
         program->last_used = std::distance(program->modules.begin(), it);
     }
-    // resogun: a new permutation compiles alongside the program's other pending ones; its draws
+    // tempest: a new permutation compiles alongside the program's other pending ones; its draws
     // are skipped for at most SkipFrames() GPU frames, then it is waited for or built here.
     auto retry_perm = std::ranges::find(program->retry_permutations, spec);
     if (it == program->modules.end() && compile_async &&

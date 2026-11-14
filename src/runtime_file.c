@@ -23,7 +23,7 @@ typedef struct _stat64 HostStat;
 #define host_stat(path,s) _stat64(path,s)
 #define host_fstat(fd,s) _fstat64(fd,s)
 #define host_lseek _lseeki64
-#define O_DIRECTORY 0x40000000 /* resogun marker, removed before _open */
+#define O_DIRECTORY 0x40000000 /* tempest marker, removed before _open */
 #else
 typedef struct stat HostStat;
 #define host_stat(path,s) stat(path,s)
@@ -203,9 +203,9 @@ static File *get(int fd) {
     if (fd<3 || fd>=MAX_FILES || !files[fd].used) return NULL;
     return &files[fd];
 }
-/* RESOGUN_FILE_TRACE=1: opens, writes, renames and removals outside the game package (/app0,
+/* TEMPEST_FILE_TRACE=1: opens, writes, renames and removals outside the game package (/app0,
  * /hostapp) and failed reads anywhere. */
-static int file_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("RESOGUN_FILE_TRACE"); v=e && e[0]=='1'; } return v; }
+static int file_trace(void) { static int v=-1; if (v<0) { const char *e=getenv("TEMPEST_FILE_TRACE"); v=e && e[0]=='1'; } return v; }
 static const char *traced_path(int fd) {
     static const char none[]="?";
     return fd>=3 && fd<MAX_FILES && files[fd].used ? files[fd].path : none;

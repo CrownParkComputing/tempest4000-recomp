@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-#include "resogun_settings.h"
-#include "resogun_graphics.h"
+#include "tempest_settings.h"
+#include "tempest_graphics.h"
 
 #include <algorithm>
 #include <atomic>
@@ -12,25 +12,25 @@
 #include <string>
 #include <utility>
 
-double ResogunWindowRefreshRate(); // resogun_gpu.cpp: the window's display, 0 when unknown
+double TempestWindowRefreshRate(); // tempest_gpu.cpp: the window's display, 0 when unknown
 
-namespace ResogunSettings {
+namespace TempestSettings {
 
 namespace {
 
 const char* Path() {
-    const char* env = std::getenv("RESOGUN_CONFIG");
+    const char* env = std::getenv("TEMPEST_CONFIG");
     return env && env[0] ? env : "settings.ini";
 }
 
-// The file read: Path() when it exists, else RESOGUN_CONFIG_DEFAULT (the launcher's: the one the
+// The file read: Path() when it exists, else TEMPEST_CONFIG_DEFAULT (the launcher's: the one the
 // setup wrote next to the exe, while Path() is the save folder's). Writes always go to Path().
 const char* ReadPath() {
     if (FILE* file = std::fopen(Path(), "r")) {
         std::fclose(file);
         return Path();
     }
-    const char* fallback = std::getenv("RESOGUN_CONFIG_DEFAULT");
+    const char* fallback = std::getenv("TEMPEST_CONFIG_DEFAULT");
     return fallback && fallback[0] ? fallback : Path();
 }
 
@@ -43,15 +43,15 @@ bool Truthy(std::string_view value) {
 void Set(Values& v, const std::string& key, const std::string& value) {
     const int i = std::atoi(value.c_str());
     if (key == "display_mode") {
-        v.display_mode = ResogunGraphics::ParseDisplayMode(value);
+        v.display_mode = TempestGraphics::ParseDisplayMode(value);
     } else if (key == "vsync") {
         v.vsync = Truthy(value);
     } else if (key == "tearing") {
         v.tearing = Truthy(value);
     } else if (key == "monitor") {
-        v.monitor = ResogunGraphics::ParseMonitor(value);
-    } else if (key == "output_resolution" || key == "window") { // window: its name before Resogun
-        const auto [w, h] = ResogunGraphics::ParseWindowSize(value);
+        v.monitor = TempestGraphics::ParseMonitor(value);
+    } else if (key == "output_resolution" || key == "window") { // window: its name before Tempest
+        const auto [w, h] = TempestGraphics::ParseWindowSize(value);
         v.window_width = w;
         v.window_height = h;
     } else if (key == "aspect_ratio") {
@@ -72,7 +72,7 @@ void Set(Values& v, const std::string& key, const std::string& value) {
     } else if (key == "hdr") {
         v.startup_hdr = v.hdr = Truthy(value);
     } else if (key == "frame_rate") {
-        const bool listed = ResogunGraphics::IndexOf(ResogunGraphics::FrameRates, i, -1) >= 0;
+        const bool listed = TempestGraphics::IndexOf(TempestGraphics::FrameRates, i, -1) >= 0;
         v.frame_rate = listed ? i : 60;
         if (!value.empty() && !listed) {
             std::printf("Settings: frame_rate=%s is not 30, 60, 90, 120, 144 or 180; using 60\n", value.c_str());
@@ -95,7 +95,7 @@ std::vector<std::pair<std::string, std::string>> DisplayKeys() {
     const auto& v = Get();
     const int monitor = v.monitor;
     return {
-        {"display_mode", std::string(ResogunGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)])},
+        {"display_mode", std::string(TempestGraphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)])},
         {"monitor", monitor < 0 ? std::string() : std::to_string(monitor)},
         {"aspect_ratio", std::string(AspectRatioKeys[std::clamp(v.aspect_ratio.load(), 0, AspectRatioCount - 1)])},
         {"output_resolution", std::to_string(v.window_width.load()) + "x" + std::to_string(v.window_height.load())},
@@ -156,7 +156,7 @@ void WriteDisplay() {
 // Gives the save folder its own settings.ini at start: the default file copied as it is (the
 // environment overrides stay out of it), or the display keys when there is none.
 void CopyToSaveFolder() {
-    const char* env = std::getenv("RESOGUN_CONFIG"); /* the launcher's or run.py's save folder */
+    const char* env = std::getenv("TEMPEST_CONFIG"); /* the launcher's or run.py's save folder */
     if (!env || !env[0] || Exists(Path())) return;
     const char* source = ReadPath();
     if (std::string_view(source) == Path()) {
@@ -209,17 +209,17 @@ void Load() {
         if (std::string_view(path) != Path()) std::printf("Settings: changes are saved to %s\n", Path());
     }
     const std::pair<const char*, const char*> env_keys[] = {
-        {"RESOGUN_DISPLAY_MODE", "display_mode"}, {"RESOGUN_VSYNC", "vsync"},
-        {"RESOGUN_TEARING", "tearing"},
-        {"RESOGUN_MONITOR", "monitor"},           {"RESOGUN_WINDOW", "output_resolution"},
-        {"RESOGUN_OUTPUT_RESOLUTION", "output_resolution"},
-        {"RESOGUN_ASPECT_RATIO", "aspect_ratio"},
-        {"RESOGUN_AUDIO_CHANNELS", "audio_channels"},
-        {"RESOGUN_SKIP_INTRO", "skip_intro"},     {"RESOGUN_FRAME_RATE", "frame_rate"},
-        {"RESOGUN_TITLE_BACK_EXITS", "title_back_exits"},
-        {"RESOGUN_RENDER_RESOLUTION", "render_resolution"},
-        {"RESOGUN_HDR", "hdr"},
-        {"RESOGUN_SHARPENING", "sharpening"},
+        {"TEMPEST_DISPLAY_MODE", "display_mode"}, {"TEMPEST_VSYNC", "vsync"},
+        {"TEMPEST_TEARING", "tearing"},
+        {"TEMPEST_MONITOR", "monitor"},           {"TEMPEST_WINDOW", "output_resolution"},
+        {"TEMPEST_OUTPUT_RESOLUTION", "output_resolution"},
+        {"TEMPEST_ASPECT_RATIO", "aspect_ratio"},
+        {"TEMPEST_AUDIO_CHANNELS", "audio_channels"},
+        {"TEMPEST_SKIP_INTRO", "skip_intro"},     {"TEMPEST_FRAME_RATE", "frame_rate"},
+        {"TEMPEST_TITLE_BACK_EXITS", "title_back_exits"},
+        {"TEMPEST_RENDER_RESOLUTION", "render_resolution"},
+        {"TEMPEST_HDR", "hdr"},
+        {"TEMPEST_SHARPENING", "sharpening"},
     };
     for (const auto& [env, key] : env_keys) {
         if (const char* value = std::getenv(env); value && value[0]) {
@@ -250,7 +250,7 @@ double DisplayRefresh() {
                         .count();
     if (now >= next_check.load(std::memory_order_relaxed)) {
         next_check.store(now + 500, std::memory_order_relaxed);
-        refresh.store(ResogunWindowRefreshRate(), std::memory_order_relaxed);
+        refresh.store(TempestWindowRefreshRate(), std::memory_order_relaxed);
     }
     return refresh.load(std::memory_order_relaxed);
 }
@@ -260,43 +260,43 @@ int EffectiveFrameRate() {
     const int rate = v.frame_rate.load(std::memory_order_relaxed);
     const double refresh = DisplayRefresh();
     if ((!v.vsync && v.tearing) || refresh <= 0.0) return rate;
-    int best = ResogunGraphics::FrameRates[0];
-    for (const int r : ResogunGraphics::FrameRates) {
+    int best = TempestGraphics::FrameRates[0];
+    for (const int r : TempestGraphics::FrameRates) {
         if (r <= rate && r <= refresh + 0.5) best = std::max(best, r);
     }
     return best;
 }
 
-} // namespace ResogunSettings
+} // namespace TempestSettings
 
-extern "C" int resogun_skip_intro(void) {
-    return ResogunSettings::Get().skip_intro ? 1 : 0;
+extern "C" int tempest_skip_intro(void) {
+    return TempestSettings::Get().skip_intro ? 1 : 0;
 }
 
-extern "C" int resogun_title_back_exits(void) {
-    return ResogunSettings::Get().title_back_exits.load(std::memory_order_relaxed) ? 1 : 0;
+extern "C" int tempest_title_back_exits(void) {
+    return TempestSettings::Get().title_back_exits.load(std::memory_order_relaxed) ? 1 : 0;
 }
 
-extern "C" int resogun_frame_rate(void) {
-    return ResogunSettings::EffectiveFrameRate();
+extern "C" int tempest_frame_rate(void) {
+    return TempestSettings::EffectiveFrameRate();
 }
 
-extern "C" void resogun_set_frame_rate(int rate) {
-    ResogunSettings::Get().frame_rate = rate;
+extern "C" void tempest_set_frame_rate(int rate) {
+    TempestSettings::Get().frame_rate = rate;
 }
 
-extern "C" int resogun_hdr(void) {
-    return ResogunSettings::Get().startup_hdr ? 1 : 0;
+extern "C" int tempest_hdr(void) {
+    return TempestSettings::Get().startup_hdr ? 1 : 0;
 }
 
-extern "C" int resogun_width_4k(void) {
-    return ResogunSettings::Get().startup_width_4k.load();
+extern "C" int tempest_width_4k(void) {
+    return TempestSettings::Get().startup_width_4k.load();
 }
 
-extern "C" void resogun_set_width_4k(int width) {
-    ResogunSettings::Get().startup_width_4k = width;
+extern "C" void tempest_set_width_4k(int width) {
+    TempestSettings::Get().startup_width_4k = width;
 }
 
-extern "C" int resogun_render_4k(void) {
-    return ResogunSettings::Get().startup_render_resolution == ResogunSettings::Render4k;
+extern "C" int tempest_render_4k(void) {
+    return TempestSettings::Get().startup_render_resolution == TempestSettings::Render4k;
 }

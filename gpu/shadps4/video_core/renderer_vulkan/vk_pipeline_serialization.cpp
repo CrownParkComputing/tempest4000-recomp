@@ -26,8 +26,8 @@
 #include "common/scope_exit.h"
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "common/thread.h"
-#include "resogun_overlay.h"
-#include "resogun_toggles.h"
+#include "tempest_overlay.h"
+#include "tempest_toggles.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
 #include "shader_recompiler/info.h"
@@ -40,15 +40,15 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 7u; // resogun: interpolated integer fix (Pascal)
-static constexpr u32 ShaderMetaVersion = 7u; // resogun: ImageResource::needs_native
-static constexpr u32 PipelineKeyVersion = 5u; // resogun: Info layout (ImageResource::needs_native)
+static constexpr u32 ShaderBinaryVersion = 7u; // tempest: interpolated integer fix (Pascal)
+static constexpr u32 ShaderMetaVersion = 7u; // tempest: ImageResource::needs_native
+static constexpr u32 PipelineKeyVersion = 5u; // tempest: Info layout (ImageResource::needs_native)
 } // namespace Serialization
 
 namespace Vulkan {
 
 namespace {
-// resogun: RESOGUN_AMD_PATHS_OFF=shaderext changes recompiled SPIR-V, so it gets its own shader
+// tempest: TEMPEST_AMD_PATHS_OFF=shaderext changes recompiled SPIR-V, so it gets its own shader
 // binary cache version (distinct from every plain version bump).
 u32 CurrentShaderBinaryVersion() {
     return Serialization::ShaderBinaryVersion + (AmdPathsOff::Current().shaderext ? 32u : 0u);
@@ -60,7 +60,7 @@ bool ValidKey(const Key& key) {
     return !key.empty() && key.size() <= VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR;
 }
 namespace {
-// Version 1 holds the driver binaries; version 2 (resogun) their keys and content hashes, each
+// Version 1 holds the driver binaries; version 2 (tempest) their keys and content hashes, each
 // binary being stored once in shared/ (StoreShared): one ~2 MB binary was in thousands of files.
 std::vector<u8> EncodeVersion(const Key& global, const Key& pipeline, u64 graphics_hash,
                               const std::vector<Binary>& binaries, u32 version) {
@@ -264,7 +264,7 @@ std::optional<std::vector<Binary>> Load(const std::filesystem::path& file, const
     }
     return binaries;
 }
-// resogun: each binary is written once to shared/ (kept when it already reads back the same),
+// tempest: each binary is written once to shared/ (kept when it already reads back the same),
 // then the pipeline file with the keys only.
 bool StoreShared(const std::filesystem::path& file, const Key& global, const Key& pipeline,
                  u64 graphics_hash, const std::vector<Binary>& binaries) {
@@ -288,7 +288,7 @@ bool StoreShared(const std::filesystem::path& file, const Key& global, const Key
 }
 bool Store(const std::filesystem::path& file, const Key& global, const Key& pipeline,
            u64 graphics_hash, const std::vector<Binary>& binaries) {
-    if (ResogunToggle::Disabled(ResogunToggle::SharedBinaries)) {
+    if (TempestToggle::Disabled(TempestToggle::SharedBinaries)) {
         return Save(file, Encode(global, pipeline, graphics_hash, binaries));
     }
     return StoreShared(file, global, pipeline, graphics_hash, binaries);
@@ -412,8 +412,8 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
         const auto ns = u64(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                 std::chrono::steady_clock::now() - started)
                                 .count());
-        extern std::atomic<u64> g_resogun_pipeline_driver_ns;
-        g_resogun_pipeline_driver_ns += ns;
+        extern std::atomic<u64> g_tempest_pipeline_driver_ns;
+        g_tempest_pipeline_driver_ns += ns;
         if (enabled) {
             (restored ? binary_restore_ns : binary_compile_ns) += ns;
             ++(restored ? binary_restore_calls : binary_compile_calls);
@@ -592,7 +592,7 @@ vk::ResultValue<vk::UniquePipeline> CreateCachedGraphicsPipeline(
     return result;
 }
 
-// resogun: RESOGUN_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in
+// tempest: TEMPEST_PARALLEL_WARMUP=1. The cache store is still read and the shader modules created in
 // order on the calling thread (program_cache and its permutation checks are not thread-safe);
 // only the pipeline objects, the slow part, are built here. The runtime compiler builds
 // pipelines on worker threads the same way (vk_pipeline_cache.cpp).
@@ -647,7 +647,7 @@ struct PipelineCache::WarmupPool {
         return jobs.empty() && !running;
     }
     static u32 Threads() {
-        const char* env = std::getenv("RESOGUN_PARALLEL_WARMUP");
+        const char* env = std::getenv("TEMPEST_PARALLEL_WARMUP");
         if (!env || !*env || *env == '0') {
             return 0;
         }
@@ -674,9 +674,9 @@ private:
             try {
                 ok = job();
             } catch (const std::exception& e) {
-                LOG_ERROR(Render_Vulkan, "resogun: warm-up pipeline failed: {}", e.what());
+                LOG_ERROR(Render_Vulkan, "tempest: warm-up pipeline failed: {}", e.what());
             } catch (...) {
-                LOG_ERROR(Render_Vulkan, "resogun: warm-up pipeline failed");
+                LOG_ERROR(Render_Vulkan, "tempest: warm-up pipeline failed");
             }
             (ok ? built : failed).fetch_add(1, std::memory_order_relaxed);
             lock.lock();
@@ -1029,7 +1029,7 @@ bool PipelineCache::CheckCacheProfile() {
         std::memcpy(&cached_profile, profile_data.data(), sizeof(cached_profile));
     }
     if (profile_data.size() != sizeof(Shader::Profile) || cached_profile != profile) {
-        // resogun: upstream closed the cache for the session here, so it was never rewritten
+        // tempest: upstream closed the cache for the session here, so it was never rewritten
         // and every later session compiled every shader again (stutters on each new area).
         // Start a fresh cache for this build and GPU instead.
         LOG_WARNING(Render, "Pipeline cache isn't compatible with current system: rebuilding it");
@@ -1135,9 +1135,9 @@ void PipelineCache::WarmUp(const std::function<void(u32, u32)>& progress) {
 void PipelineCache::StartOnDemand() {
     const bool compatible = CheckCacheProfile();
     auto& db = Storage::DataBase::Instance();
-    // resogun: compiled shaders are reused from disk (RESOGUN_DISK_SHADERS=0 turns it off).
-    const bool disk_on = EmulatorSettingsImpl::Flag("RESOGUN_DISK_SHADERS", true) &&
-                         !ResogunToggle::Disabled(ResogunToggle::DiskShaders);
+    // tempest: compiled shaders are reused from disk (TEMPEST_DISK_SHADERS=0 turns it off).
+    const bool disk_on = EmulatorSettingsImpl::Flag("TEMPEST_DISK_SHADERS", true) &&
+                         !TempestToggle::Disabled(TempestToggle::DiskShaders);
     if (db.IsOpened() && db.ConcurrentReads() && !disk_on) {
         // This session numbers permutations by first use again: the store is rebuilt at the
         // next start with the bit on.
@@ -1158,8 +1158,8 @@ void PipelineCache::StartOnDemand() {
             std::printf("Pipeline startup: shader store rebuilt for on-demand reads\n");
         } else {
             IndexDiskShaders();
-            // resogun: the shader cache is read into memory at start (RESOGUN_SHADER_PREFETCH=0 turns it off).
-            if (EmulatorSettingsImpl::Flag("RESOGUN_SHADER_PREFETCH", true)) {
+            // tempest: the shader cache is read into memory at start (TEMPEST_SHADER_PREFETCH=0 turns it off).
+            if (EmulatorSettingsImpl::Flag("TEMPEST_SHADER_PREFETCH", true)) {
                 StartDiskPrefetch();
             }
         }
@@ -1172,7 +1172,7 @@ void PipelineCache::StartOnDemand() {
 }
 
 bool PipelineCache::DiskShadersActive() const {
-    return disk_shaders && !ResogunToggle::Disabled(ResogunToggle::DiskShaders);
+    return disk_shaders && !TempestToggle::Disabled(TempestToggle::DiskShaders);
 }
 
 void PipelineCache::IndexDiskShaders() {
@@ -1196,7 +1196,7 @@ void PipelineCache::IndexDiskShaders() {
     }
 }
 
-// resogun: the saved files of one program, read off the GPU thread (DiskPrefetch) or on it.
+// tempest: the saved files of one program, read off the GPU thread (DiskPrefetch) or on it.
 struct DiskBlob {
     u32 idx;
     std::vector<u8> meta;
@@ -1218,7 +1218,7 @@ static std::vector<DiskBlob> ReadDiskProgram(u64 hash, const std::vector<u32>& i
     return blobs;
 }
 
-// resogun: one low-priority thread reads every saved program into memory at startup (a few MB),
+// tempest: one low-priority thread reads every saved program into memory at startup (a few MB),
 // so the GPU thread only deserializes and creates the modules. A program the GPU thread needs
 // first is claimed and read there instead.
 struct PipelineCache::DiskPrefetch {
@@ -1237,7 +1237,7 @@ void PipelineCache::StartDiskPrefetch() {
     disk_prefetch = new DiskPrefetch;
     disk_prefetch->thread = std::jthread{[prefetch = disk_prefetch, work = std::move(work)](
                                              std::stop_token stop) {
-        Common::SetCurrentThreadName("resogun:ShaderPrefetch");
+        Common::SetCurrentThreadName("tempest:ShaderPrefetch");
         Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         const auto started = std::chrono::steady_clock::now();
         const u32 total = u32(work.size());
@@ -1245,10 +1245,10 @@ void PipelineCache::StartDiskPrefetch() {
         u64 programs = 0, bytes = 0;
         for (const auto& [hash, indices] : work) {
             if (stop.stop_requested()) {
-                ResogunOverlay::SetShaderPrefetch(0, 0);
+                TempestOverlay::SetShaderPrefetch(0, 0);
                 return;
             }
-            ResogunOverlay::SetShaderPrefetch(done++, total);
+            TempestOverlay::SetShaderPrefetch(done++, total);
             {
                 std::scoped_lock lock{prefetch->mutex};
                 if (prefetch->claimed.contains(hash)) {
@@ -1265,7 +1265,7 @@ void PipelineCache::StartDiskPrefetch() {
                 ++programs;
             }
         }
-        ResogunOverlay::SetShaderPrefetch(total, total);
+        TempestOverlay::SetShaderPrefetch(total, total);
         std::printf("Disk shaders: prefetch read %llu programs (%.1f MB) in %.0f ms\n",
                     static_cast<unsigned long long>(programs), bytes / 1048576.0,
                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
@@ -1274,14 +1274,14 @@ void PipelineCache::StartDiskPrefetch() {
     }};
 }
 
-// resogun (ResogunToggle::SharedBinaries): files written before shared storage (or with the bit off)
+// tempest (TempestToggle::SharedBinaries): files written before shared storage (or with the bit off)
 // are rewritten once, on a lowest-priority thread, so the folder shrinks without a cache loss.
 struct PipelineCache::BinaryConversion {
     std::jthread thread;
 };
 
 void PipelineCache::StartBinaryConversion() {
-    if (ResogunToggle::Disabled(ResogunToggle::SharedBinaries) ||
+    if (TempestToggle::Disabled(TempestToggle::SharedBinaries) ||
         !instance.GetPipelineBinaryGlobalKey().keySize ||
         !EmulatorSettings.IsPipelineCacheEnabled()) {
         return;
@@ -1290,7 +1290,7 @@ void PipelineCache::StartBinaryConversion() {
         "pipeline-binaries";
     binary_conversion = new BinaryConversion;
     binary_conversion->thread = std::jthread{[directory](std::stop_token stop) {
-        Common::SetCurrentThreadName("resogun:BinaryConvert");
+        Common::SetCurrentThreadName("tempest:BinaryConvert");
         Common::SetCurrentThreadPriority(Common::ThreadPriority::Low);
         const auto started = std::chrono::steady_clock::now();
         const auto [files, freed] = PipelineBinaryCache::ConvertToShared(
@@ -1315,7 +1315,7 @@ void PipelineCache::StopDiskPrefetch() {
     disk_prefetch = nullptr;
 }
 
-// resogun: GPU thread, once per program: every saved permutation at its saved index, so names and
+// tempest: GPU thread, once per program: every saved permutation at its saved index, so names and
 // pipeline keys stay those of the store. Rejected metas (other versions, motion vertex
 // shaders) leave their slot empty for the next compile (NewPermutationIndex).
 bool PipelineCache::LoadDiskProgram(u64 hash) {
@@ -1397,7 +1397,7 @@ bool PipelineCache::NewPipelineKey(const std::string& name) {
 }
 
 void PipelineCache::ReportDiskShaders() {
-    if (disk_shaders && !disk_store_untrusted && ResogunToggle::Disabled(ResogunToggle::DiskShaders)) {
+    if (disk_shaders && !disk_store_untrusted && TempestToggle::Disabled(TempestToggle::DiskShaders)) {
         // Switched off live: later permutations follow first-use order again (see StartOnDemand).
         Storage::DataBase::Instance().Save(Storage::BlobType::ShaderProfile, "disk_shaders",
                                            std::vector<u8>{0});
@@ -1423,7 +1423,7 @@ void PipelineCache::ReportDiskShaders() {
                 static_cast<unsigned long long>(s.keys_skipped));
 }
 
-// resogun: one cached shader stage read by the background warm-up, shared by every cached
+// tempest: one cached shader stage read by the background warm-up, shared by every cached
 // pipeline that uses it. A pool thread fills it; the GPU thread merges it into program_cache
 // once (MergeWarmStage).
 struct PipelineCache::WarmStage {
@@ -1446,7 +1446,7 @@ struct PipelineCache::WarmStage {
     }
 };
 
-// resogun: StartBackgroundWarmUp. The pool reads the store and builds the pipelines at low
+// tempest: StartBackgroundWarmUp. The pool reads the store and builds the pipelines at low
 // priority; the GPU thread merges the stages and publishes the pipelines a few at a time.
 struct PipelineCache::BackgroundWarmup {
     struct Entry {
@@ -1658,7 +1658,7 @@ void PipelineCache::PumpWarmUp() {
     warm.last_batch = now;
     ++warm.batches;
     const u32 done = warm.done + warm.pool->failed;
-    ResogunOverlay::SetBackgroundLoading(done, std::max(warm.total.load(), done));
+    TempestOverlay::SetBackgroundLoading(done, std::max(warm.total.load(), done));
 
     static const std::array<Shader::RuntimeInfo, MaxShaderStages> no_runtime_infos{};
     for (auto& entry : warm.read.Take(32)) {
@@ -1748,17 +1748,17 @@ void PipelineCache::PumpWarmUp() {
                 binary_key_ns.load() / 1e9, binary_load_ns.load() / 1e9,
                 binary_handles_ns.load() / 1e9, binary_restore_ns.load() / 1e9,
                 binary_compile_ns.load() / 1e9);
-    extern std::atomic<u64> g_resogun_pipeline_total_ns, g_resogun_pipeline_driver_ns;
-    extern std::atomic<u32> g_resogun_pipelines_built;
-    const u32 built = std::max(1u, g_resogun_pipelines_built.load());
+    extern std::atomic<u64> g_tempest_pipeline_total_ns, g_tempest_pipeline_driver_ns;
+    extern std::atomic<u32> g_tempest_pipelines_built;
+    const u32 built = std::max(1u, g_tempest_pipelines_built.load());
     std::printf("Pipeline build time: %u graphics pipelines, %.1f ms each (driver %.1f ms, the rest "
                 "%.1f ms), %.1f s in all\n",
-                built, g_resogun_pipeline_total_ns / 1e6 / built, g_resogun_pipeline_driver_ns / 1e6 / built,
-                (g_resogun_pipeline_total_ns - g_resogun_pipeline_driver_ns) / 1e6 / built,
-                g_resogun_pipeline_total_ns / 1e9);
+                built, g_tempest_pipeline_total_ns / 1e6 / built, g_tempest_pipeline_driver_ns / 1e6 / built,
+                (g_tempest_pipeline_total_ns - g_tempest_pipeline_driver_ns) / 1e6 / built,
+                g_tempest_pipeline_total_ns / 1e9);
     // The idle threads stay parked (StopWarmUp).
     warm.finished = true;
-    ResogunOverlay::SetBackgroundLoading(0, 0);
+    TempestOverlay::SetBackgroundLoading(0, 0);
     Storage::DataBase::Instance().FinishPreload();
 }
 
@@ -1768,11 +1768,11 @@ void PipelineCache::StopWarmUp() {
     }
     background->stopping = true;
     background->pool->Drain();
-    // resogun: leaked with its parked threads (this runs at exit only): a thread that ended
+    // tempest: leaked with its parked threads (this runs at exit only): a thread that ended
     // while the game ran crashed in ntdll (RtlWakeAllConditionVariable). Join them once the
     // cause is known.
     background = nullptr;
-    ResogunOverlay::SetBackgroundLoading(0, 0);
+    TempestOverlay::SetBackgroundLoading(0, 0);
 }
 
 void PipelineCache::Sync() {

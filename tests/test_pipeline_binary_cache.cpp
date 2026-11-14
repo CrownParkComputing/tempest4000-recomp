@@ -275,8 +275,8 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
     _set_error_mode(_OUT_TO_STDERR);
 #endif
-    // RESOGUN_TEST_TOGGLES: ResogunToggle bits for this run (2305843009213693952: version 1 files).
-    if (const char* toggles = std::getenv("RESOGUN_TEST_TOGGLES")) {
+    // TEMPEST_TEST_TOGGLES: TempestToggle bits for this run (2305843009213693952: version 1 files).
+    if (const char* toggles = std::getenv("TEMPEST_TEST_TOGGLES")) {
         runtime_disabled_optimizations = std::strtoull(toggles, nullptr, 10);
     }
     if (argc == 4 && std::string_view(argv[1]) == "--verify") { // original and converted copies
@@ -356,7 +356,7 @@ int main(int argc, char** argv) {
     assert(Encode(global, pipeline, 42, {}).empty());
     assert(Encode(global, pipeline, 42, std::vector<Binary>(MaxBinaries + 1, binaries[0])).empty());
     const auto root = std::filesystem::temp_directory_path() /
-                      ("resogun-binary-test-" +
+                      ("tempest-binary-test-" +
                        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     const auto file = root / "pipeline.bin";
     assert(!Load(file, global, pipeline, 42));

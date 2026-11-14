@@ -4,11 +4,11 @@
  * (whenever the device pulls a quantum) lets it overtake the mixer and play
  * stale halves - a click every period. The lowest SDL queue level of
  * each window is steered to two buffers (silence prefill on underrun, ±3%
- * cadence corrections), which also absorbs device clock drift. Without an audio device (headless runs, RESOGUN_AUDIO=none)
+ * cadence corrections), which also absorbs device clock drift. Without an audio device (headless runs, TEMPEST_AUDIO=none)
  * ports only follow the clock. */
 #define _GNU_SOURCE
 #include "runtime.h"
-#include "gpu/resogun_gpu.h"
+#include "gpu/tempest_gpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,9 +45,9 @@ typedef struct {
     int64_t adjust_ns; int window_min, window_count; /* queue level control */
     uint64_t last_output_us;
     pthread_mutex_t lock;
-    FILE *dump;                     /* RESOGUN_AUDIO_DUMP: raw converted PCM per port */
+    FILE *dump;                     /* TEMPEST_AUDIO_DUMP: raw converted PCM per port */
     int stats;
-    uint64_t stat_start_ns, stat_last_ns, stat_max_gap_ns; /* RESOGUN_AUDIO_STATS */
+    uint64_t stat_start_ns, stat_last_ns, stat_max_gap_ns; /* TEMPEST_AUDIO_STATS */
     unsigned stat_starved, stat_buffers; int stat_min_queued;
 } Port;
 typedef struct { uint16_t output; uint8_t channel, reserved; int16_t volume; uint16_t reroute; uint64_t flag, reserved64[2]; } PortState;
@@ -70,7 +70,7 @@ static void sleep_until(uint64_t deadline) {
 }
 static int sdl_audio(void) {
     if (sdl_ready<0) {
-        const char *mode=getenv("RESOGUN_AUDIO");
+        const char *mode=getenv("TEMPEST_AUDIO");
         sdl_ready = (!mode || strcmp(mode,"none")) && SDL_InitSubSystem(SDL_INIT_AUDIO);
         printf("Runtime: audio backend %s\n", sdl_ready ? SDL_GetCurrentAudioDriver() : "timer (silent)");
     }
@@ -91,7 +91,7 @@ static int port_range(int type, int *first, int *last) {
 
 /* Speaker layouts a 7.1 port can be sent to (settings.ini audio_channels). */
 enum { OUT_STEREO=2, OUT_51=6, OUT_71=8 };
-enum { MODE_AUTO=0, MODE_STEREO=1, MODE_51=2, MODE_71=3 }; /* resogun_gpu_audio_channels() */
+enum { MODE_AUTO=0, MODE_STEREO=1, MODE_51=2, MODE_71=3 }; /* tempest_gpu_audio_channels() */
 
 /* The layout a 7.1 port is sent in. `mode` is the setting, `device` the playback device's channel
    count (0: unknown, the stream is left to SDL's own conversion). Automatic follows the device:
@@ -237,7 +237,7 @@ static void try_audio_fallback(Port *p, int id) {
     if (sdl_ready && new_driver && !strcmp(new_driver, "directsound")) {
         printf("Runtime: audio backend %s (fallback from wasapi)\n", new_driver);
         /* The new driver may have another channel count: lay the mix out for it. */
-        p->out_channels = p->channels == 8 ? output_channels(resogun_gpu_audio_channels(), default_device_channels()) : p->channels;
+        p->out_channels = p->channels == 8 ? output_channels(tempest_gpu_audio_channels(), default_device_channels()) : p->channels;
         SDL_AudioSpec spec = {p->is_float ? SDL_AUDIO_F32 : SDL_AUDIO_S16, p->out_channels, 48000};
         p->stream = OPEN_AUDIO_STREAM(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
     } else {
@@ -269,7 +269,7 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
     for (int c=0;c<8;++c) p->volume[c]=VOLUME_0DB;
     p->mix_level=VOLUME_0DB;
     int device_channels=sdl_audio() ? default_device_channels() : 0;
-    p->out_channels=p->channels==8 ? output_channels(resogun_gpu_audio_channels(),device_channels) : p->channels;
+    p->out_channels=p->channels==8 ? output_channels(tempest_gpu_audio_channels(),device_channels) : p->channels;
     if (sdl_audio()) {
         SDL_AudioSpec spec={p->is_float ? SDL_AUDIO_F32 : SDL_AUDIO_S16, p->out_channels, 48000};
         p->stream=OPEN_AUDIO_STREAM(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,&spec,NULL,NULL);
@@ -279,8 +279,8 @@ static ABI int32_t audio_open(int32_t user, int32_t type, int32_t index, uint32_
         if (p->stream) SDL_ResumeAudioStreamDevice(p->stream);
         else fprintf(stderr,"Runtime: SDL audio stream failed (%s); port %d uses the timer sink\n",SDL_GetError(),id);
     }
-    p->stats=getenv("RESOGUN_AUDIO_STATS")!=NULL;
-    const char *dump=getenv("RESOGUN_AUDIO_DUMP");
+    p->stats=getenv("TEMPEST_AUDIO_STATS")!=NULL;
+    const char *dump=getenv("TEMPEST_AUDIO_DUMP");
     if (dump) {
         char path[4096];
         snprintf(path,sizeof(path),"%s.port%d.%dch.%s",dump,id,p->out_channels,p->is_float ? "f32" : "s16");

@@ -19,10 +19,10 @@ uint32_t key_size = 2;
 
 void SetCache(const char* value) {
 #ifdef _WIN32
-    _putenv_s("RESOGUN_PIPELINE_BINARIES", value);
+    _putenv_s("TEMPEST_PIPELINE_BINARIES", value);
 #else
-    if (*value) setenv("RESOGUN_PIPELINE_BINARIES", value, 1);
-    else unsetenv("RESOGUN_PIPELINE_BINARIES");
+    if (*value) setenv("TEMPEST_PIPELINE_BINARIES", value, 1);
+    else unsetenv("TEMPEST_PIPELINE_BINARIES");
 #endif
 }
 

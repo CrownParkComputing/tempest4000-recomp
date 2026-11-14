@@ -1,5 +1,5 @@
-// Resogun runner: replaces shadPS4's spdlog-based logger with a small fmt sink.
-// Levels from RESOGUN_GPU_LOG (log.cpp): "warning Lib.AvPlayer:trace"; default warning.
+// Tempest runner: replaces shadPS4's spdlog-based logger with a small fmt sink.
+// Levels from TEMPEST_GPU_LOG (log.cpp): "warning Lib.AvPlayer:trace"; default warning.
 #pragma once
 #include <algorithm>
 #include <array>

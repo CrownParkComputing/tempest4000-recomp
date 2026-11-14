@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// resogun: AMD FidelityFX FSR 1 RCAS (robust contrast-adaptive sharpening), after FsrRcasF in
+// tempest: AMD FidelityFX FSR 1 RCAS (robust contrast-adaptive sharpening), after FsrRcasF in
 // ffx_fsr1.h (Copyright (c) 2021 Advanced Micro Devices, Inc., MIT), without its denoise option.
 // Runs on the output-sized picture post_process.frag made, in its encoding (sRGB or PQ), as RCAS
 // expects. Each pixel is pushed away from its four neighbours by at most what keeps it inside their

@@ -81,7 +81,7 @@ void Translator::V_INTERP_P2_F32(const GcnInst& inst) {
         return;
     }
     if (attr.is_flat) {
-        // resogun: a flat-shaded input (SPI_PS_INPUT_CNTL.FLAT_SHADE) holds P0 with zero deltas
+        // tempest: a flat-shaded input (SPI_PS_INPUT_CNTL.FLAT_SHADE) holds P0 with zero deltas
         // in the parameter cache, so P1/P2 interpolation gives the provoking vertex's value on
         // hardware. An assertion here stopped a player's game in Mission 3's intro (issue #1).
         interp.primary = Qualifier::Flat;

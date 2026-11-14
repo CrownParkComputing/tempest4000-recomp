@@ -11,7 +11,7 @@
 
 namespace VideoCore {
 
-// resogun: a GPU-written range of a page that BufferCache::TryMergeWrite let a CPU write into
+// tempest: a GPU-written range of a page that BufferCache::TryMergeWrite let a CPU write into
 // without downloading, with the bytes the guest held there at the fault. An aligned 8-byte word
 // still equal to `bytes` is the GPU's (its copy is newer); one with any byte that differs was
 // written by the guest since (the guest's copy is newer). By word, not byte: a write rarely
@@ -23,7 +23,7 @@ struct MergedRange {
     std::vector<std::uint8_t> bytes;
 };
 
-// resogun: splits [addr, end) into the runs to transfer, leaving out bytes of merged ranges:
+// tempest: splits [addr, end) into the runs to transfer, leaving out bytes of merged ranges:
 // uploads leave out the bytes the guest has not changed (SkipUnchanged: the GPU's are newer),
 // downloads the bytes it has changed (SkipChanged: a download would put back the GPU's stale
 // copy over the guest's newer write). Feed ranges in ascending address order, then Finish.

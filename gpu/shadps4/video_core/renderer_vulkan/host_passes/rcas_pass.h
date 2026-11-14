@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// resogun: FSR 1 RCAS sharpening of the presented picture (key sharpening). The post process pass
+// tempest: FSR 1 RCAS sharpening of the presented picture (key sharpening). The post process pass
 // draws into an output-sized image this pass owns, and RCAS draws that into the frame.
 #pragma once
 

@@ -12,9 +12,9 @@
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
-#include "resogun_overlay.h"
-#include "resogun_graphics.h"
-#include "resogun_settings.h"
+#include "tempest_overlay.h"
+#include "tempest_graphics.h"
+#include "tempest_settings.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -43,7 +43,7 @@
 #include <vector>
 #include <vk_mem_alloc.h>
 #ifdef MemoryBarrier
-#undef MemoryBarrier // resogun: winnt.h macro (through fmt), clashes with vk::MemoryBarrier
+#undef MemoryBarrier // tempest: winnt.h macro (through fmt), clashes with vk::MemoryBarrier
 #endif
 
 namespace Vulkan {
@@ -129,7 +129,7 @@ static vk::Rect2D FitImage(s32 frame_width, s32 frame_height, s32 swapchain_widt
                          dst_rect.offset.x, dst_rect.offset.y);
 }
 
-// resogun: F12 screenshots of the game's frame (without the overlay), saved as PNG to the user
+// tempest: F12 screenshots of the game's frame (without the overlay), saved as PNG to the user
 // folder's screenshots/ once the GPU is done; the conversion follows upstream shadPS4.
 namespace {
 
@@ -209,7 +209,7 @@ std::filesystem::path ScreenshotPath() {
     std::filesystem::create_directories(dir, ec);
     std::string serial{Common::ElfInfo::Instance().GameSerial()};
     if (serial.empty()) {
-        serial = "resogun";
+        serial = "tempest";
     }
     const auto now = std::chrono::system_clock::now();
     const std::time_t now_time = std::chrono::system_clock::to_time_t(now);
@@ -264,7 +264,7 @@ void CaptureScreenshot(const Instance& instance, Scheduler& scheduler, vk::Comma
         vmaDestroyBuffer(allocator, buffer, allocation);
         if (!converted) {
             LOG_ERROR(Render_Vulkan, "Screenshot: unsupported format {}", vk::to_string(format));
-            ResogunOverlay::ShowNotice("Screenshot failed: unsupported image format");
+            TempestOverlay::ShowNotice("Screenshot failed: unsupported image format");
             return;
         }
         size_t png_size = 0;
@@ -285,15 +285,15 @@ void CaptureScreenshot(const Instance& instance, Scheduler& scheduler, vk::Comma
         }
         if (saved) {
             std::printf("Screenshot: %s (%ux%u)\n", Common::FS::PathToUTF8String(path).c_str(), width, height);
-            ResogunOverlay::ShowNotice("Screenshot saved: " + Common::FS::PathToUTF8String(path.filename()));
+            TempestOverlay::ShowNotice("Screenshot saved: " + Common::FS::PathToUTF8String(path.filename()));
         } else {
             LOG_ERROR(Render_Vulkan, "Screenshot: cannot write {}", Common::FS::PathToUTF8String(path));
-            ResogunOverlay::ShowNotice("Screenshot failed: cannot write the file");
+            TempestOverlay::ShowNotice("Screenshot failed: cannot write the file");
         }
     });
 }
 
-/// While the start-up picture waits (ResogunOverlay::SplashWaiting), a few rows across `frame`
+/// While the start-up picture waits (TempestOverlay::SplashWaiting), a few rows across `frame`
 /// (layout TransferSrcOptimal) are read back to tell when the game first shows something other
 /// than black.
 void SampleForSplash(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
@@ -312,7 +312,7 @@ void SampleForSplash(const Instance& instance, Scheduler& scheduler, vk::Command
     VmaAllocationInfo info{};
     if (!rows || vmaCreateBuffer(instance.GetAllocator(), &buffer_ci, &alloc_ci, &buffer, &allocation,
                                  &info) != VK_SUCCESS) {
-        ResogunOverlay::NoteSplashFrame(true); // cannot tell: let the picture go
+        TempestOverlay::NoteSplashFrame(true); // cannot tell: let the picture go
         return;
     }
     std::array<vk::BufferImageCopy, max_rows> copies{};
@@ -343,7 +343,7 @@ void SampleForSplash(const Instance& instance, Scheduler& scheduler, vk::Command
         for (size_t i = 0; converted && i < rgba.size(); i += 4) {
             lit += std::max({rgba[i], rgba[i + 1], rgba[i + 2]}) > 40;
         }
-        ResogunOverlay::NoteSplashFrame(!converted || lit * 500 >= size_t(width) * rows);
+        TempestOverlay::NoteSplashFrame(!converted || lit * 500 >= size_t(width) * rows);
     });
 }
 
@@ -373,8 +373,8 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
 
     pp_pass.Create(device, swapchain.GetSurfaceFormat().format);
     rcas_pass.Create(device, instance.GetAllocator(), swapchain.GetSurfaceFormat().format);
-    ResogunOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
-    // resogun: the window was created hidden. Until the game's first frame, a while later,
+    TempestOverlay::Init(instance, swapchain.GetSurfaceFormat().format, num_images);
+    // tempest: the window was created hidden. Until the game's first frame, a while later,
     // nothing else draws into it, so it gets the start-up picture as soon as it is shown (cloaked on
     // Windows, at its final size) and is revealed with the picture already in it. Drawn once more
     // when revealed: DWM may drop what a cloaked window showed and wait for its next frame.
@@ -394,25 +394,25 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
         PresentLoadingFrame();
     }
 
-    const bool binary_cache = EmulatorSettingsImpl::Flag("RESOGUN_PIPELINE_BINARIES", true) &&
+    const bool binary_cache = EmulatorSettingsImpl::Flag("TEMPEST_PIPELINE_BINARIES", true) &&
                               EmulatorSettings.IsPipelineCacheEnabled();
-    const bool capture_only = EmulatorSettingsImpl::Flag("RESOGUN_PIPELINE_BINARY_ISOLATED", false) &&
-                              EmulatorSettingsImpl::Flag("RESOGUN_PIPELINE_CAPTURE_ONLY", false);
+    const bool capture_only = EmulatorSettingsImpl::Flag("TEMPEST_PIPELINE_BINARY_ISOLATED", false) &&
+                              EmulatorSettingsImpl::Flag("TEMPEST_PIPELINE_CAPTURE_ONLY", false);
     if (UseOnDemandPipelines(binary_cache, instance.GetPipelineBinaryGlobalKey().keySize != 0,
                             capture_only)) {
         rasterizer->GetPipelineCache().StartOnDemand();
         return;
     }
 
-    // resogun: by default the cached pipelines load while the game runs (a corner note shows the
+    // tempest: by default the cached pipelines load while the game runs (a corner note shows the
     // progress). Otherwise rebuilding them takes up to minutes before the first game frame:
     // show what is happening instead of a black window.
-    const char* background_warmup = std::getenv("RESOGUN_BACKGROUND_WARMUP");
+    const char* background_warmup = std::getenv("TEMPEST_BACKGROUND_WARMUP");
     if ((!background_warmup || *background_warmup != '0') &&
         rasterizer->GetPipelineCache().StartBackgroundWarmUp()) {
         return;
     }
-    ResogunOverlay::SetLoading(true, 0, 0);
+    TempestOverlay::SetLoading(true, 0, 0);
     PresentLoadingFrame();
     auto last = std::chrono::steady_clock::now();
     rasterizer->GetPipelineCache().WarmUp([&](u32 done, u32 total) {
@@ -421,10 +421,10 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
             return;
         }
         last = now;
-        ResogunOverlay::SetLoading(true, done, total);
+        TempestOverlay::SetLoading(true, done, total);
         PresentLoadingFrame();
     });
-    ResogunOverlay::SetLoading(false, 0, 0);
+    TempestOverlay::SetLoading(false, 0, 0);
 
 }
 
@@ -586,7 +586,7 @@ static vk::Format GetFrameViewFormat(const Libraries::VideoOut::PixelFormat form
     return {};
 }
 
-// resogun: raw copy of an image for RESOGUN_FRAME_DUMP_TRIGGER, written once the GPU is done.
+// tempest: raw copy of an image for TEMPEST_FRAME_DUMP_TRIGGER, written once the GPU is done.
 static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
                     vk::Image image, vk::ImageLayout layout, u32 w, u32 h, const char* name,
                     int index) {
@@ -606,7 +606,7 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
     cmdbuf.copyImageToBuffer(image, layout, buffer,
                              vk::BufferImageCopy{.imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
                                                  .imageExtent = {w, h, 1}});
-    const char* dir = std::getenv("RESOGUN_DUMP_DIR");
+    const char* dir = std::getenv("TEMPEST_DUMP_DIR");
     char path[512];
     std::snprintf(path, sizeof(path), "%s/%s_%03d_%ux%u.raw", dir && *dir ? dir : "out/dump", name,
                   index, w, h);
@@ -623,12 +623,12 @@ static void DumpRaw(const Instance& instance, Scheduler& scheduler, vk::CommandB
 
 Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& attribute,
                                VAddr cpu_address) {
-    // resogun: RESOGUN_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
-    // guest display buffer and presented image are written to RESOGUN_DUMP_DIR (default out/dump)
+    // tempest: TEMPEST_FRAME_DUMP_TRIGGER=<file>: when the file exists it is removed and this frame's
+    // guest display buffer and presented image are written to TEMPEST_DUMP_DIR (default out/dump)
     // as raw 32-bit pixels.
-    static const char* frame_dump_trigger = std::getenv("RESOGUN_FRAME_DUMP_TRIGGER");
+    static const char* frame_dump_trigger = std::getenv("TEMPEST_FRAME_DUMP_TRIGGER");
     static int frame_dump_index = 0;
-    // resogun: a number in the trigger file dumps that many consecutive flips.
+    // tempest: a number in the trigger file dumps that many consecutive flips.
     static int frame_dump_remaining = 0;
     if (frame_dump_trigger && frame_dump_remaining == 0) {
         if (FILE* f = std::fopen(frame_dump_trigger, "r")) {
@@ -710,9 +710,9 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     // the post process pass still sRGB encoded and has to be decoded there instead.
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
-    // resogun: with sharpening on, the post process pass draws into the RCAS pass's image and
+    // tempest: with sharpening on, the post process pass draws into the RCAS pass's image and
     // RCAS draws that into the frame.
-    if (ResogunSettings::Get().sharpening.load(std::memory_order_relaxed)) {
+    if (TempestSettings::Get().sharpening.load(std::memory_order_relaxed)) {
         pp_pass.Render(cmdbuf, image_view, image_size, rcas_pass.Input(cmdbuf, draw_scheduler, *frame),
                        pp_settings);
         rcas_pass.Render(cmdbuf, *frame, HostPasses::RcasPass::DefaultSharpness);
@@ -737,7 +737,7 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
     SubmitInfo info{};
     draw_scheduler.Flush(info);
 
-    // resogun: the GPU command thread runs at most one guest frame ahead of the GPU: it waits
+    // tempest: the GPU command thread runs at most one guest frame ahead of the GPU: it waits
     // here for the previous frame. Unbounded, it ran ahead and then blocked wherever a resource
     // ran out, so flips (and the game's frame timing) came in bursts.
     if (previous_frame_tick) {
@@ -866,7 +866,7 @@ void Presenter::PresentLoadingFrame() {
                            range);
     barrier(vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal,
             vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eColorAttachmentWrite);
-    ResogunOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+    TempestOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
     barrier(vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
             vk::AccessFlagBits::eColorAttachmentWrite, {});
     SubmitInfo info{};
@@ -895,7 +895,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         }
     };
 
-    // resogun: a minimized window has no pixels on Windows (0x0) or is hidden/occluded; keep the swapchain
+    // tempest: a minimized window has no pixels on Windows (0x0) or is hidden/occluded; keep the swapchain
     // and skip presenting until the window is restored.
     if (window.IsMinimized() || window.GetWidth() <= 0 || window.GetHeight() <= 0) {
         free_frame();
@@ -927,7 +927,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     ASSERT_MSG(reset_result == vk::Result::eSuccess,
                "Unexpected error resetting present done fence: {}", vk::to_string(reset_result));
 
-    // resogun: the game frame is blitted (letterboxed) straight into the swapchain image.
+    // tempest: the game frame is blitted (letterboxed) straight into the swapchain image.
     const vk::Image swapchain_image = swapchain.Image();
     auto& scheduler = present_scheduler;
     const auto cmdbuf = scheduler.CommandBuffer();
@@ -988,11 +988,11 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (VideoCore::ConsumeGameOnlyScreenshotRequests() != 0) {
             CaptureScreenshot(instance, scheduler, cmdbuf, *frame);
         }
-        if (is_game_frame && !is_reusing_frame && ResogunOverlay::SplashWaiting()) {
+        if (is_game_frame && !is_reusing_frame && TempestOverlay::SplashWaiting()) {
             SampleForSplash(instance, scheduler, cmdbuf, *frame);
         }
-        // resogun: the settings menu / FPS counter over the frame, at display resolution.
-        const bool overlay = ResogunOverlay::Visible();
+        // tempest: the settings menu / FPS counter over the frame, at display resolution.
+        const bool overlay = TempestOverlay::Visible();
         const std::array post_barriers{
             vk::ImageMemoryBarrier{
                 .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
@@ -1022,7 +1022,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
                                vk::PipelineStageFlagBits::eAllCommands,
                                vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
         if (overlay) {
-            ResogunOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
+            TempestOverlay::Render(cmdbuf, swapchain.ImageView(), extent);
             const vk::ImageMemoryBarrier to_present{
                 .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
                 .dstAccessMask = vk::AccessFlagBits::eNone,

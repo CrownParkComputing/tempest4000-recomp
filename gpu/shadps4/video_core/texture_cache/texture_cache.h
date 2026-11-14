@@ -9,7 +9,7 @@
 #include "video_core/texture_cache/readback_queue.h"
 #include "video_core/texture_cache/readback_sources.h"
 #include <chrono>
-#include "resogun_toggles.h"
+#include "tempest_toggles.h"
 #include <optional>
 #include <cstdlib>
 #include "video_core/renderer_vulkan/vk_staging_buffer_pool.h"
@@ -74,7 +74,7 @@ public:
         ImageInfo info;
         ImageViewInfo view_info;
         BindingType type{BindingType::Texture};
-        /// resogun: the shader reads with integer coordinates (ImageResource::needs_native), not
+        /// tempest: the shader reads with integer coordinates (ImageResource::needs_native), not
         /// normalized sampling. Gates ResolveOverlap's partial height views.
         bool needs_native{true};
 
@@ -100,12 +100,12 @@ public:
                  PageManager& tracker);
     ~TextureCache();
 
-    /// resogun: changes whenever an image is registered or unregistered.
+    /// tempest: changes whenever an image is registered or unregistered.
     [[nodiscard]] u64 RegistryGeneration() const noexcept {
         return registry_generation.load(std::memory_order_acquire);
     }
 
-    /// resogun: FindImage's access tick for an image found by a memoized lookup. The LRU touch
+    /// tempest: FindImage's access tick for an image found by a memoized lookup. The LRU touch
     /// FindImage also does happens in UpdateImage (FindTexture), which every binding reaches.
     void MarkFound(ImageId image_id) {
         slot_images[image_id].tick_accessed_last = scheduler.CurrentTick();
@@ -118,12 +118,12 @@ public:
     /// Invalidates any image in the logical page range.
     void InvalidateMemory(VAddr addr, size_t size);
 
-    /// resogun: guest memory written through the backing view (readbacks, buffer
+    /// tempest: guest memory written through the backing view (readbacks, buffer
     /// downloads), which bypasses page tracking. Any lock may be held: images over the range
     /// are marked CPU-dirty at the next UpdateImage or GC tick (ApplyBackingWrites).
     void NoteBackingWrite(VAddr address, u64 size);
 
-    /// resogun: diagnostics. Every image the GPU did not write is uploaded again from guest
+    /// tempest: diagnostics. Every image the GPU did not write is uploaded again from guest
     /// memory when next used, as if the guest had rewritten it. Returns how many were marked.
     u32 ReloadFromGuest();
 
@@ -138,10 +138,10 @@ public:
     bool ResolveReadbacks(VAddr address, u64 size, bool assume_locks = true,
                           ReadbackSource source = ReadbackSource::Unknown);
     void CancelReadbacks(VAddr address, u64 size, bool exact = false);
-    // resogun: whether a guest-view read of the range would fault on a pending readback, for
+    // tempest: whether a guest-view read of the range would fault on a pending readback, for
     // readers that go through the backing view instead.
     bool ReadbackBlocksRead(VAddr address, u64 size);
-    // resogun: counts the readbacks that read-protect their pages. A backing-view reader that
+    // tempest: counts the readbacks that read-protect their pages. A backing-view reader that
     // sees it change during its copy may have read a page a readback protected (and perhaps
     // already retired) meanwhile. Zero when pending pages stay readable (stale readbacks).
     u64 ReadbackGeneration() const;
@@ -152,7 +152,7 @@ public:
     /// Retrieves image whose address matches provided
     [[nodiscard]] ImageId FindImageFromRange(VAddr address, size_t size, bool ensure_valid = true);
 
-    /// resogun: a FindView result remembered by the caller for the same image and view info.
+    /// tempest: a FindView result remembered by the caller for the same image and view info.
     struct ViewMemo {
         ImageId image_id{};
         const void* backing = nullptr;
@@ -171,7 +171,7 @@ public:
     /// Retrieves the depth target with specified properties
     [[nodiscard]] ImageView& FindDepthTarget(ImageId image_id, const ImageDesc& desc);
 
-    /// resogun: whether UpdateImage has nothing to do for this image (its fast path).
+    /// tempest: whether UpdateImage has nothing to do for this image (its fast path).
     [[nodiscard]] bool IsUpToDate(ImageId image_id) const {
         const Image& image = slot_images[image_id];
         const u32 flags = std::atomic_ref<u32>(const_cast<u32&>(reinterpret_cast<const u32&>(image.flags)))
@@ -187,11 +187,11 @@ public:
 
     /// Updates image contents if it was modified by CPU.
     void UpdateImage(ImageId image_id) {
-        // resogun: a clean image already tracked and touched in this GC period needs nothing.
+        // tempest: a clean image already tracked and touched in this GC period needs nothing.
         // Every texture binding comes here; the mutex (shared with the fault handlers of the
         // guest threads) was ~3% of the GPU thread. Flags are read atomically: an invalidation
         // racing with this check races the same way with the locked path.
-        if (!ResogunToggle::Disabled(ResogunToggle::UpdateImageFastPath)) {
+        if (!TempestToggle::Disabled(TempestToggle::UpdateImageFastPath)) {
             const Image& image = slot_images[image_id];
             const u32 flags = std::atomic_ref<u32>(const_cast<u32&>(reinterpret_cast<const u32&>(image.flags)))
                                   .load(std::memory_order_acquire);
@@ -215,7 +215,7 @@ public:
         SynchronizeAlias(image_id);
     }
 
-    /// resogun: a GPU write to the image (render target, storage): images sharing its memory
+    /// tempest: a GPU write to the image (render target, storage): images sharing its memory
     /// copy from it before their next read. From cuesta4/shadPS4 (eltutz), which fixed God of
     /// War III's exposure: it is measured into a small image and read through an alias.
     void PublishAliasWrite(ImageId image_id);
@@ -238,7 +238,7 @@ public:
     void RefreshImage(Image& image);
 
     /// Retrieves the sampler that matches the provided S# descriptor.
-    /// extra_lod_bias: resogun, added to the S#'s bias (reduced scene rendering).
+    /// extra_lod_bias: tempest, added to the S#'s bias (reduced scene rendering).
     [[nodiscard]] vk::Sampler GetSampler(const AmdGpu::Sampler& sampler,
                                          AmdGpu::BorderColorBuffer border_color_base,
                                          bool is_depth, float extra_lod_bias = 0.0f);
@@ -249,7 +249,7 @@ public:
         auto& image = slot_images[id];
         return !uid || image.image_uid == uid ? &image : nullptr;
     }
-    /// resogun diagnostics: writes level 0 of a color image to RESOGUN_DIAG_DIR as raw pixels
+    /// tempest diagnostics: writes level 0 of a color image to TEMPEST_DIAG_DIR as raw pixels
     /// (<seq>_<tag>_<address>_<w>x<h>_p<pitch>_b<bytes per pixel>_f<vk format>.raw). Waits for
     /// the GPU.
     void DiagDumpImage(ImageId image_id, const char* tag);
@@ -394,7 +394,7 @@ private:
     /// Copies image memory back to CPU.
     void DownloadImageMemory(ImageId image_id, bool sync = false);
 
-    /// resogun: a recorded image-to-staging copy, written to guest memory after a GPU wait.
+    /// tempest: a recorded image-to-staging copy, written to guest memory after a GPU wait.
     struct PendingDownload {
         VAddr guest_address;
         u32 size;
@@ -460,12 +460,12 @@ private:
     tsl::robin_map<u64, Sampler> samplers;
     std::unordered_set<ImageId> download_images;
     u64 total_used_memory = 0;
-    u64 gc_evictions = 0, gc_downloads = 0; ///< resogun: pressure report
+    u64 gc_evictions = 0, gc_downloads = 0; ///< tempest: pressure report
     std::chrono::steady_clock::time_point gc_report_time{};
     u64 trigger_gc_memory = 0;
     u64 pressure_gc_memory = 0;
     u64 critical_gc_memory = 0;
-    u64 gc_budget_logged = 0; ///< resogun: the budget last logged (discrete GPUs follow it)
+    u64 gc_budget_logged = 0; ///< tempest: the budget last logged (discrete GPUs follow it)
     u64 total_used_samplers = 0;
     u64 trigger_gc_samplers = 0;
     u64 pressure_gc_samplers = 0;
@@ -475,14 +475,14 @@ private:
     Common::LeastRecentlyUsedCache<u64, u64> sampler_lru_cache;
     const bool readback_linear_images;
     const bool deferred_readbacks = [] {
-        const char* value = std::getenv("RESOGUN_DEFERRED_READBACK");
+        const char* value = std::getenv("TEMPEST_DEFERRED_READBACK");
         return value && value[0] == '1';
     }();
-    /// resogun: RESOGUN_STALE_READBACK=1 (needs deferred readbacks). A pending copy only blocks CPU
+    /// tempest: TEMPEST_STALE_READBACK=1 (needs deferred readbacks). A pending copy only blocks CPU
     /// writes: CPU reads see the version the GPU published last (one frame late) instead of
     /// waiting for the GPU. Writes still wait, so no byte is lost.
     const bool stale_readbacks = deferred_readbacks && [] {
-        const char* value = std::getenv("RESOGUN_STALE_READBACK");
+        const char* value = std::getenv("TEMPEST_STALE_READBACK");
         return value && value[0] == '1';
     }();
     template <bool track>
@@ -494,7 +494,7 @@ private:
         u64 Bytes() const { return u64{width} * height * bits / 8; }
     };
     std::array<ReadbackImageStat, 16> readback_images{};
-    /// resogun (RESOGUN_PERF_DIAG): images FindImage had to create, by request, and the image that was
+    /// tempest (TEMPEST_PERF_DIAG): images FindImage had to create, by request, and the image that was
     /// cached at that memory before (none: nothing overlapped). Printed with the readback report.
     struct CreateStat {
         VAddr address;
@@ -512,7 +512,7 @@ private:
     u64 images_created = 0;
     std::chrono::steady_clock::time_point create_report = std::chrono::steady_clock::now();
     void ReportImageCreates();
-    /// resogun (RESOGUN_PERF_DIAG): requests answered by ResogunToggle::PartialHeightViews.
+    /// tempest (TEMPEST_PERF_DIAG): requests answered by TempestToggle::PartialHeightViews.
     struct PartialViewStat {
         VAddr address;
         vk::Format format, used_format;
@@ -525,7 +525,7 @@ private:
     u64 readbacks_released = 0;
     u64 readbacks_neighbors = 0; ///< resolves ExactReadbackWaits let through (report)
     bool ExactReadbackWaits() const {
-        return stale_readbacks && !ResogunToggle::Disabled(ResogunToggle::ExactReadbackWaits);
+        return stale_readbacks && !TempestToggle::Disabled(TempestToggle::ExactReadbackWaits);
     }
     ReadbackQueue<Vulkan::StagingBufferRef> pending_readbacks;
     std::mutex readback_mutex;
@@ -538,12 +538,12 @@ private:
     void RetireReadbacks();
     PageTable page_table;
     std::mutex mutex;
-    /// resogun: under `mutex`. GPU-modified images hold the written data themselves.
+    /// tempest: under `mutex`. GPU-modified images hold the written data themselves.
     void ApplyBackingWrites();
     std::mutex backing_writes_mutex;
     std::vector<std::pair<VAddr, u64>> backing_writes;
     std::atomic<bool> has_backing_writes{false};
-    /// resogun: images with the same guest address (guarded by `mutex`). `backing` holds the
+    /// tempest: images with the same guest address (guarded by `mutex`). `backing` holds the
     /// complete contents; `writer` is a newer write not yet copied into it.
     struct AliasState {
         u64 backing_uid{};
@@ -569,7 +569,7 @@ private:
     [[nodiscard]] bool CommitAliasWriter(AliasState& state);
     void CopyAlias(ImageId src_id, ImageId dst_id, const Extent3D& extent);
     void InvalidateAlias(Image& image);
-    // resogun: FindImage results for unchanged image registrations (guarded by `mutex`).
+    // tempest: FindImage results for unchanged image registrations (guarded by `mutex`).
     struct FindImageCacheEntry {
         VAddr address = 0;
         u64 size = 0;

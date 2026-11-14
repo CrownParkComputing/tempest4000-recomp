@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Local build and test on Linux: build.sh plus the Python tests, a boot check and the package.
 #
-#   ./build_linux.sh                  build out/resogun and out/resogun-setup
+#   ./build_linux.sh                  build out/tempest and out/tempest-setup
 #   ./build_linux.sh --test           also run every C/C++ test and the Python tests
 #   ./build_linux.sh --run [--game DIR] [--timeout N]
-#                                     also start the game (RESOGUN_GAME_DIR, or DIR) for N seconds
+#                                     also start the game (TEMPEST_GAME_DIR, or DIR) for N seconds
 #                                     (default 20) and print its first STOP:/Fault: line
 #   ./build_linux.sh --package        also write the release tarballs (tools/package.py --zip)
 #   ./build_linux.sh --clean          remove out/ first (a full rebuild)
@@ -13,7 +13,7 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")"
 
-test=0 run=0 package=0 clean=0 timeout=20 game=${RESOGUN_GAME_DIR:-}
+test=0 run=0 package=0 clean=0 timeout=20 game=${TEMPEST_GAME_DIR:-}
 while (($#)); do
     case $1 in
     --test) test=1 ;;
@@ -43,7 +43,7 @@ if ((test)); then
     (cd tests && python3 -m unittest discover -p 'test_*.py')
 fi
 if ((run)); then
-    [[ -n $game ]] || { echo '--run needs the game dump: --game DIR or RESOGUN_GAME_DIR.' >&2; exit 1; }
+    [[ -n $game ]] || { echo '--run needs the game dump: --game DIR or TEMPEST_GAME_DIR.' >&2; exit 1; }
     mkdir -p out
     status=0
     python3 run.py --game "$game" --timeout "$timeout" > out/boot.log 2>&1 || status=$?

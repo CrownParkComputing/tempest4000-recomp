@@ -32,7 +32,7 @@ public:
         return opened;
     }
     void FinishPreload();
-    /// resogun: removes every cached blob (an incompatible cache is rebuilt, not ignored).
+    /// tempest: removes every cached blob (an incompatible cache is rebuilt, not ignored).
     void Clear();
 
     bool Save(BlobType type, const std::string& name, std::vector<u8>&& data);
@@ -41,15 +41,15 @@ public:
     void Load(BlobType type, const std::string& name, std::vector<u8>& data);
     void Load(BlobType type, const std::string& name, std::vector<u32>& data);
 
-    /// resogun: `stop` returning true ends the walk early (background warm-up at exit).
+    /// tempest: `stop` returning true ends the walk early (background warm-up at exit).
     void ForEachBlob(BlobType type, const std::function<void(std::vector<u8>&& data)>& func,
                      const std::function<bool()>& stop = {});
-    /// resogun: blobs are plain files written beside and renamed into place, so other threads
+    /// tempest: blobs are plain files written beside and renamed into place, so other threads
     /// may read them while the IO thread saves (the zip archive cannot).
     [[nodiscard]] bool ConcurrentReads() const;
-    /// resogun: number of blobs ForEachBlob visits (the loading screen's total).
+    /// tempest: number of blobs ForEachBlob visits (the loading screen's total).
     size_t CountBlobs(BlobType type);
-    /// resogun: names (without extension) of the blobs of `type`; empty for the zip archive.
+    /// tempest: names (without extension) of the blobs of `type`; empty for the zip archive.
     std::vector<std::string> ListBlobs(BlobType type);
 
 private:

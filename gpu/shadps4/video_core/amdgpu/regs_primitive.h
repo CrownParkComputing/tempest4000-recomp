@@ -4,7 +4,7 @@
 #pragma once
 
 #include "common/types.h"
-#include "video_core/amdgpu/resogun_msaa.h"
+#include "video_core/amdgpu/tempest_msaa.h"
 
 namespace AmdGpu {
 

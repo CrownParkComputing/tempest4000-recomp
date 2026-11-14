@@ -38,7 +38,7 @@ int main(void) {
     if (!tmp) tmp=getenv("TEMP");
     if (!tmp) tmp="/tmp";
     char root[256], path[700];
-    snprintf(root,sizeof(root),"%s/resogun-content-test-%d",tmp,(int)getpid());
+    snprintf(root,sizeof(root),"%s/tempest-content-test-%d",tmp,(int)getpid());
     folder(root);
     snprintf(user_dir,sizeof(user_dir),"%s/save",root); folder(user_dir);
     snprintf(path,sizeof(path),"%s/addcont",user_dir); folder(path);

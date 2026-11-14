@@ -8,12 +8,12 @@
 
 #include "../src/runtime_pad.c"
 
-int resogun_gpu_overlay_captures_input(void) { return 0; }
-int resogun_skip_intro(void) { return 0; }
-int resogun_display_settings_is_open(void) { return 0; }
-void resogun_display_settings_open(void) {}
-int resogun_title_back_exits(void) { return 1; }
-void resogun_exit_prompt_open(void) {}
+int tempest_gpu_overlay_captures_input(void) { return 0; }
+int tempest_skip_intro(void) { return 0; }
+int tempest_display_settings_is_open(void) { return 0; }
+void tempest_display_settings_open(void) {}
+int tempest_title_back_exits(void) { return 1; }
+void tempest_exit_prompt_open(void) {}
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
     return 0;

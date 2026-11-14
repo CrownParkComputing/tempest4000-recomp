@@ -148,7 +148,7 @@ def verified_build(sha256, any_build=False):
     build = VERIFIED_BUILDS.get(sha256)
     if build is None and not any_build:
         raise UnverifiedBuild(f'eboot.bin (sha256 {sha256}) is not a build this release was verified with. '
-                              f'It needs the unmodified eboot.bin of Resogun CUSA00038 update '
+                              f'It needs the unmodified eboot.bin of Tempest CUSA00038 update '
                               f'{", ".join(sorted(set(VERIFIED_BUILDS.values())))}.')
     return build or ''
 

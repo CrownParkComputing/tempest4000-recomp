@@ -25,15 +25,15 @@
 #include <unistd.h>
 #endif
 /* sceKernelGetDirectMemorySize on retail PS4: 5056 MiB; a PS4 Pro (render_resolution=4k) gives
- * games 512 MiB more, and Resogun sizes its render pools for it in Pro mode (5240 MiB at boot).
- * RESOGUN_DMEM_MB raises it. pool() falls back to the retail size when the host refuses the larger
+ * games 512 MiB more, and Tempest sizes its render pools for it in Pro mode (5240 MiB at boot).
+ * TEMPEST_DMEM_MB raises it. pool() falls back to the retail size when the host refuses the larger
  * pool. */
 #define RETAIL_POOL (UINT64_C(5056) * 1024 * 1024)
 static uint64_t pool_bytes;
 static uint64_t pool_size_bytes(void) {
     uint64_t bytes = __atomic_load_n(&pool_bytes, __ATOMIC_ACQUIRE);
     if (!bytes) {
-        const char *env = getenv("RESOGUN_DMEM_MB");
+        const char *env = getenv("TEMPEST_DMEM_MB");
         uint64_t mb = env ? strtoull(env, NULL, 10) : 0;
         if (mb < 5056 || mb > 16384) mb = runtime_kernel_neo_mode() ? 5568 : 5056;
         /* Set once: callers read the size before taking the lock, and a thread that loses this
@@ -104,7 +104,7 @@ static int pool_fd=-1;
 static unsigned char *backing_base; /* second view of the pool: host writes bypass guest/GPU page protection */
 #define FLEX_SPAN (UINT64_C(1024) * 1024 * 1024)
 static uint64_t flex_bitmap[FLEX_SPAN/PAGE/64];
-/* GPU hooks (resogun_gpu): notified outside the lock, in order, after each operation. */
+/* GPU hooks (tempest_gpu): notified outside the lock, in order, after each operation. */
 typedef void (*GpuRange)(uintptr_t address, uint64_t size);
 static GpuRange hook_map, hook_unmap, hook_invalidate;
 enum { HOOK_MAP, HOOK_UNMAP, HOOK_INVALIDATE };
@@ -343,7 +343,7 @@ static int pool_create(void) {
     if (backing_base) return 0;
     runtime_memory_reserve();
     uint64_t bytes=POOL_SIZE+FLEX_SPAN;
-    const char *fail_env=getenv("RESOGUN_FAIL_GUEST_MEMORY");
+    const char *fail_env=getenv("TEMPEST_FAIL_GUEST_MEMORY");
     if (fail_env) {
         DWORD err=fail_env[0] && strcmp(fail_env,"1")!=0 ? (DWORD)strtoul(fail_env,NULL,10) : 1450;
         SetLastError(err);
@@ -351,13 +351,13 @@ static int pool_create(void) {
         fflush(stderr);
         exit(21);
     }
-    /* RESOGUN_GUEST_COMMIT_ON_MAP=1: the fallback below from the start, to try it on a machine
+    /* TEMPEST_GUEST_COMMIT_ON_MAP=1: the fallback below from the start, to try it on a machine
      * where the whole pool fits. */
-    const char *on_map=getenv("RESOGUN_GUEST_COMMIT_ON_MAP");
+    const char *on_map=getenv("TEMPEST_GUEST_COMMIT_ON_MAP");
     if (on_map && on_map[0]=='1') SetLastError(ERROR_COMMITMENT_LIMIT);
     else section=CreateFileMapping2(INVALID_HANDLE_VALUE,NULL,FILE_MAP_ALL_ACCESS,PAGE_EXECUTE_READWRITE,SEC_COMMIT,bytes,NULL,NULL,0);
     if (!section && (GetLastError()==ERROR_NO_SYSTEM_RESOURCES || GetLastError()==ERROR_COMMITMENT_LIMIT)) {
-        /* The pool is sized for the largest resolutions (RESOGUN_DMEM_MB, up to 16 GiB) and committed
+        /* The pool is sized for the largest resolutions (TEMPEST_DMEM_MB, up to 16 GiB) and committed
          * at once it exceeded RAM + page file (error 1450) although the game maps much less: then
          * it is reserved and committed as the game maps it (commit_backing). */
         DWORD error=GetLastError();
@@ -382,7 +382,7 @@ static unsigned long pool_error;
 /* Direct memory occupies [0,POOL_SIZE) of the memfd, flexible memory [POOL_SIZE,+FLEX_SPAN). */
 static int pool_create(void) {
     if (backing_base) return 0;
-    const char *fail_env=getenv("RESOGUN_FAIL_GUEST_MEMORY");
+    const char *fail_env=getenv("TEMPEST_FAIL_GUEST_MEMORY");
     if (fail_env) {
         int err=fail_env[0] && strcmp(fail_env,"1")!=0 ? (int)strtol(fail_env,NULL,10) : 12;
         fprintf(stderr,"Runtime: cannot create %" PRIu64 " MiB of guest memory (error %d); is /dev/shm or RAM large enough?\n",
@@ -390,7 +390,7 @@ static int pool_create(void) {
         fflush(stderr);
         exit(21);
     }
-    if (pool_fd<0) pool_fd=memfd_create("resogun-guest-memory", MFD_CLOEXEC);
+    if (pool_fd<0) pool_fd=memfd_create("tempest-guest-memory", MFD_CLOEXEC);
     if (pool_fd<0 || ftruncate(pool_fd,(off_t)(POOL_SIZE+FLEX_SPAN))) { pool_step="create"; pool_error=(unsigned long)errno; return -1; }
     void *view=mmap(NULL,POOL_SIZE+FLEX_SPAN,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_NORESERVE,pool_fd,0);
     if (view==MAP_FAILED) { pool_step="map"; pool_error=(unsigned long)errno; return -1; }
@@ -410,18 +410,18 @@ static void host_discard(uint64_t phys, uint64_t size) {
     fallocate(pool_fd,FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE,(off_t)phys,(off_t)size);
 }
 #endif
-/* A pool larger than the PS4's (RESOGUN_DMEM_MB) that the host refuses (Windows error 1450 on
+/* A pool larger than the PS4's (TEMPEST_DMEM_MB) that the host refuses (Windows error 1450 on
  * some laptops) falls back to the retail 5056 MiB instead of stopping the game, which may then run
  * out of direct memory. When the retail pool fails too, the game stops with exit code 21 and
  * a STOP message. Called with the write
- * lock held. RESOGUN_TEST_REFUSE_DMEM=1 refuses the larger pool (tests). */
+ * lock held. TEMPEST_TEST_REFUSE_DMEM=1 refuses the larger pool (tests). */
 static int pool(void) {
     if (backing_base) return 0;
-    const char *refuse=getenv("RESOGUN_TEST_REFUSE_DMEM");
+    const char *refuse=getenv("TEMPEST_TEST_REFUSE_DMEM");
     int refused=refuse && refuse[0]=='1' && POOL_SIZE>RETAIL_POOL;
     if (!refused && !pool_create()) return 0;
     if (POOL_SIZE>RETAIL_POOL) {
-        printf("Runtime: the host refused %" PRIu64 " MiB of direct memory (RESOGUN_DMEM_MB); falling back to "
+        printf("Runtime: the host refused %" PRIu64 " MiB of direct memory (TEMPEST_DMEM_MB); falling back to "
                "the PS4's 5056 MiB. High output resolutions may run out of memory: lower the output "
                "resolution if the game stops\n",POOL_SIZE>>20);
         __atomic_store_n(&pool_bytes,RETAIL_POOL,__ATOMIC_RELEASE);
@@ -920,7 +920,7 @@ void *runtime_low_map(size_t size, int prot) {
  * above 1 TiB, and its thread waits on the lock's semaphore for good (found as a loading-screen
  * freeze in another PS4 port). Windows' heap grows above 1 TiB once the space below the PS4
  * reservation is used up; Linux keeps malloc low with mallopt (loader.c).
- * Blocks are zeroed and 64-byte aligned behind a 64-byte header; RESOGUN_LOW_HANDLES=0 takes
+ * Blocks are zeroed and 64-byte aligned behind a 64-byte header; TEMPEST_LOW_HANDLES=0 takes
  * them from the host heap as before. */
 #define LOW_SLAB (UINT64_C(1)<<20)
 #define LOW_HEADER 64
@@ -943,9 +943,9 @@ static unsigned char *low_host(size_t total) {
 /* Called with low_lock held. */
 static unsigned char *low_carve(size_t total, uint32_t *kind) {
     if (low_handles<0) {
-        const char *e=getenv("RESOGUN_LOW_HANDLES");
+        const char *e=getenv("TEMPEST_LOW_HANDLES");
         low_handles=!(e && e[0]=='0');
-        if (!low_handles) puts("Runtime: guest thread and lock handles from the host heap (RESOGUN_LOW_HANDLES=0)");
+        if (!low_handles) puts("Runtime: guest thread and lock handles from the host heap (TEMPEST_LOW_HANDLES=0)");
     }
     if (!low_handles || low_full) return NULL;
     unsigned c=0;
@@ -966,7 +966,7 @@ static unsigned char *low_carve(size_t total, uint32_t *kind) {
             fputs("Runtime: no room left below 1 TiB for guest handles; using the host heap\n",stderr);
             return NULL;
         }
-        if (!low_slab) printf("Runtime: guest thread and lock handles below 1 TiB at %p (RESOGUN_LOW_HANDLES=0 turns this off)\n",(void *)slab);
+        if (!low_slab) printf("Runtime: guest thread and lock handles below 1 TiB at %p (TEMPEST_LOW_HANDLES=0 turns this off)\n",(void *)slab);
         low_slab=slab; low_slab_end=slab+LOW_SLAB;
     }
     unsigned char *p=low_slab; low_slab+=bytes;
@@ -1006,9 +1006,9 @@ void runtime_low_free(void *pointer) {
     LowFree *f=(LowFree *)block; f->next=low_free[h.kind]; low_free[h.kind]=f;
     pthread_mutex_unlock(&low_lock);
 }
-/* ---- GPU library interface (gpu/shim/resogun_gpu.cpp) ---- */
+/* ---- GPU library interface (gpu/shim/tempest_gpu.cpp) ---- */
 /* Optimizations switched off at run time (diagnostics): the number in the file named by
- * RESOGUN_TOGGLE_FILE, re-read every 250 ms. Bits: 1 region cache, 2 fetch shader cache,
+ * TEMPEST_TOGGLE_FILE, re-read every 250 ms. Bits: 1 region cache, 2 fetch shader cache,
  * 4 page tracking early exit, 8 pending-op poll limit, 16 threaded Vulkan recording,
  * 32 texture descriptor cache, 64 lock-free upload check, 128 image lookup cache,
  * 256 buffer uploads on the recording thread, 512 barrier tracker insert memo,
@@ -1016,13 +1016,13 @@ void runtime_low_free(void *pointer) {
  * 4096 resource sharps read by the draw-preparation workers,
  * 8192 prepared draws from the draw-preparation workers,
  * 16384 small read-only buffer copies on the recording thread,
- * 32768 hot pages (opt-in with RESOGUN_HOT_PAGES=1),
- * 65536 unprotect the 256 KiB window around a guest write fault (RESOGUN_FAULT_WINDOW KiB),
- * 131072 large guest memory copies split across copy threads (RESOGUN_COPY_THREADS),
- * 262144 with RESOGUN_ASYNC_FENCES=1: wait for guest copies at fences again,
+ * 32768 hot pages (opt-in with TEMPEST_HOT_PAGES=1),
+ * 65536 unprotect the 256 KiB window around a guest write fault (TEMPEST_FAULT_WINDOW KiB),
+ * 131072 large guest memory copies split across copy threads (TEMPEST_COPY_THREADS),
+ * 262144 with TEMPEST_ASYNC_FENCES=1: wait for guest copies at fences again,
  * 524288 small guest copies batched for the copy threads instead of the recording thread,
  * 1073741824 the lock-free UpdateImage path for clean, tracked images. */
-/* Bits 32 and up: the draw pipeline and related GPU thread work (gpu/shim/resogun_toggles.h). */
+/* Bits 32 and up: the draw pipeline and related GPU thread work (gpu/shim/tempest_toggles.h). */
 uint64_t runtime_disabled_optimizations;
 /* Speculative readers of guest memory (GPU draw-preparation workers) register a recovery
  * point: a fault on that thread jumps back to it instead of terminating (loader.c). */
@@ -1046,7 +1046,7 @@ static void *toggle_watcher(void *path) {
     return NULL;
 }
 void runtime_memory_set_gpu_hooks(GpuRange map, GpuRange unmap, GpuRange invalidate) {
-    const char *toggles=getenv("RESOGUN_TOGGLE_FILE");
+    const char *toggles=getenv("TEMPEST_TOGGLE_FILE");
     static pthread_t watcher;
     if (toggles && !watcher) pthread_create(&watcher,NULL,toggle_watcher,(void *)toggles);
     write_lock();

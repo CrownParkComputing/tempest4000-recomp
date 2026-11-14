@@ -19,7 +19,7 @@ struct Target {
     VAddr address{};
     vk::Format format{};
     u32 width{}, height{};
-    vk::Format asked{}, view{}; ///< resogun: guest's format and the bound view's, if known
+    vk::Format asked{}, view{}; ///< tempest: guest's format and the bound view's, if known
     bool operator==(const Target&) const = default;
 };
 
@@ -62,7 +62,7 @@ void AddBuffers(Entry& entry) {
 bool pass_open = false;
 std::mutex display_mutex;
 std::vector<VAddr> display_buffers;
-// resogun: read on every draw; the game registers a handful of display buffers once.
+// tempest: read on every draw; the game registers a handful of display buffers once.
 std::array<std::atomic<VAddr>, 16> display_list{};
 std::atomic<u32> display_count{0};
 
@@ -107,12 +107,12 @@ void SetResult(std::string text) {
     result = std::move(text);
 }
 
-// RESOGUN_CAPTURE_DIR, else <user>/captures (RESOGUN_GPU_USER_DIR, the saves folder).
+// TEMPEST_CAPTURE_DIR, else <user>/captures (TEMPEST_GPU_USER_DIR, the saves folder).
 std::filesystem::path CaptureDir() {
-    if (const char* dir = std::getenv("RESOGUN_CAPTURE_DIR"); dir && dir[0]) {
+    if (const char* dir = std::getenv("TEMPEST_CAPTURE_DIR"); dir && dir[0]) {
         return dir;
     }
-    const char* user = std::getenv("RESOGUN_GPU_USER_DIR");
+    const char* user = std::getenv("TEMPEST_GPU_USER_DIR");
     return std::filesystem::path(user && user[0] ? user : "user") / "captures";
 }
 
@@ -177,7 +177,7 @@ void Write(VAddr presented) {
 void FrameCapture::OnFlip(VAddr presented_address) {
     last_presented.store(presented_address, std::memory_order_relaxed);
     flips.fetch_add(1, std::memory_order_release);
-    static const char* trigger = std::getenv("RESOGUN_CAPTURE_TRIGGER");
+    static const char* trigger = std::getenv("TEMPEST_CAPTURE_TRIGGER");
     if (state.load(std::memory_order_relaxed) != Idle) {
         return;
     }
@@ -249,7 +249,7 @@ void FrameCapture::BeginPass(const VideoCore::ImageInfo* const* colors, u32 num_
         }
     }
     // Frame boundaries in the command stream: the pass that writes a display buffer as its only
-    // target. resogun: a game can also draw scene passes (two targets) into display buffers.
+    // target. tempest: a game can also draw scene passes (two targets) into display buffers.
     display = display && targets.size() == 1;
     const bool new_pass = !(pass_open && !entries.empty() && !entries.back().compute &&
                             entries.back().colors == targets);

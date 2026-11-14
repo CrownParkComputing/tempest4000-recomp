@@ -1,18 +1,51 @@
-# Tempest 4000 (PS4) on PC - work in progress
+# Tempest 4000 (PS4) on PC
 
-**This does not play the game yet.** It is [CrownParkComputing/resogun-recomp](https://github.com/CrownParkComputing/resogun-recomp)
-(itself a fork of [rcostanza/resogun-recomp](https://github.com/rcostanza/resogun-recomp)) pointed
-at a second title, Tempest 4000 (CUSA09856). The runner, the HLE runtime and the renderer are
-their authors' work; what is here for Tempest is the starting point and the measurements.
+Runs Llamasoft's **Tempest 4000** (CUSA09856, v1.02) natively on Linux. The game's own x86-64 code
+executes directly; the PS4 system libraries it calls are reimplemented in C, and its GNM rendering
+goes through shadPS4's video core on Vulkan.
 
-**Read [PORTING.md](PORTING.md) first.** In short: a Tempest 4000 `.pkg` extracts, its eboot
-parses, the image prepares and the modules link, all with no changes. It then stops in libc
-initialization on the first of 52 unimplemented PS4 imports. The game's entry point has not run.
+This began as [CrownParkComputing/resogun-recomp](https://github.com/CrownParkComputing/resogun-recomp),
+itself a fork of [rcostanza/resogun-recomp](https://github.com/rcostanza/resogun-recomp). Their
+authors wrote the loader, the HLE runtime and the renderer; everything here carries their shape,
+renamed rather than rewritten. Same licence, GPL-2.0-or-later.
 
-Everything below this line still describes Resogun, which this code does play. It is kept because
-the build, the setup and the `.pkg` extraction are the same.
+🚨 **No game files are included** 🚨 — you supply your own `.pkg` or a decrypted dump.
 
----
+## State
+
+| | |
+|---|---|
+| Boots, renders, plays | **yes** — title screen, level select, the tube, its own geometry |
+| All 52 PS4 imports it needs | **implemented** |
+| Audio | ATRAC9 through NGS2 with LibAtrac9; the decoder and mixer are written but **not yet confirmed to make sound** |
+| Intro video | stalls on some runs (AvPlayer); moving `assets/Atari_h264_30fps.mp4` aside gets past it |
+| Windows, Android | no — see below |
+
+[PORTING.md](PORTING.md) records what was measured and what each import needed.
+
+## Rendering and display options
+
+In the game, **F10** (or hold **Select**/View/Share for two seconds) opens the Display Settings
+panel: window mode, aspect ratio, resolution, monitor, VSync, frame rate, render resolution,
+sharpening and HDR. It applies at once and saves to `settings.ini`.
+
+The same keys can be set before starting, in `settings.ini` beside the binary or in your save
+folder (`settings.example.ini` documents every one), or per run as environment variables:
+
+```bash
+TEMPEST_DISPLAY_MODE=windowed TEMPEST_OUTPUT_RESOLUTION=1280x720 ./tempest
+```
+
+`display_mode=borderless` is the default and covers the screen; use `windowed` if you want the
+desktop back while it runs.
+
+## Why there is no Android build
+
+The PS4's own x86-64 machine code is executed directly here — `loader.c` calls the game's entry
+point as a function pointer, the thread entry is x86-64 assembly, and the CPU check reads `cpuid`.
+Nothing translates instructions, so an ARM device cannot run it; that would need a full
+x86-64-to-ARM64 dynamic recompiler on the scale of FEX-Emu or box64. The realistic route on an ARM
+Android device is to run the Linux build under FEX, not to build this for Android.
 
 ## Features
 
@@ -41,21 +74,21 @@ the build, the setup and the `.pkg` extraction are the same.
   takes a few seconds and about 700 MB. A dump you have already extracted works too: the folder
   with `eboot.bin`, `sce_module`, `sce_sys`, `audio.pck` and `stream.dat`.
 
-A higher frame rate needs a PC that holds it: Resogun's game speed follows the frames it shows, so a frame that comes late slows the game down for that moment.
+A higher frame rate needs a PC that holds it: Tempest's game speed follows the frames it shows, so a frame that comes late slows the game down for that moment.
 
 ## Install and play
 
 1. [Download the latest release here](https://github.com/CrownParkComputing/resogun-recomp/releases/latest)
-2. Extract it anywhere you can write: `tar -xzf resogun-pc-<version>-linux.tar.gz -C ~/Games`
-3. Run `resogun-setup`: from a file manager it asks with dialogs, in a terminal it asks there. It
+2. Extract it anywhere you can write: `tar -xzf tempest-pc-<version>-linux.tar.gz -C ~/Games`
+3. Run `tempest-setup`: from a file manager it asks with dialogs, in a terminal it asks there. It
    also takes `--game <pkg or dump> [--save <folder>] [--dlc <folder>]`.
 4. Choose your game's **`.pkg`** (or a dump you have already extracted), optionally a **DLC
    folder**, and a **save folder**. It extracts the `.pkg` next to itself, prepares the game in a
    few seconds and offers an entry in your application menu. Your `.pkg` and your dumps are only
    read, never changed.
-5. Start the game from the menu entry, or run `./resogun`.
+5. Start the game from the menu entry, or run `./tempest`.
 
-Run `resogun-setup` again any time to change folders; it offers to copy your saves when the save
+Run `tempest-setup` again any time to change folders; it offers to copy your saves when the save
 folder moves. Turn off **Skip the intro logos** (or set `skip_intro=0` in `settings.ini`) to see
 the logos and the title screen again.
 
@@ -63,11 +96,11 @@ On a Steam Deck, do this in Desktop Mode; _Add a Non-Steam Game_ in Steam then l
 
 ### Updating
 
-Extract the new release over the old folder and run the setup once more (the game asks you to). Your folders, saves and settings are kept. Setup also remembers the folders in `~/.config/resogun/paths.ini`, so a release extracted somewhere new only needs **Install**.
+Extract the new release over the old folder and run the setup once more (the game asks you to). Your folders, saves and settings are kept. Setup also remembers the folders in `~/.config/tempest/paths.ini`, so a release extracted somewhere new only needs **Install**.
 
 ### DLC
 
-Resogun's add-ons (the extra ships and skins) carry no data of their own: the game only asks whether each one is installed. A DLC dump is a folder holding `sce_sys`, named after the add-on's label, the end of its content ID (`UP9000-CUSA00038_00-ASTRONAUT0000002` is `ASTRONAUT0000002`):
+Tempest's add-ons (the extra ships and skins) carry no data of their own: the game only asks whether each one is installed. A DLC dump is a folder holding `sce_sys`, named after the add-on's label, the end of its content ID (`UP9000-CUSA00038_00-ASTRONAUT0000002` is `ASTRONAUT0000002`):
 
 ```
 <folder containing your DLCs>/
@@ -114,12 +147,12 @@ clicks the touchpad. The keyboard works alongside a gamepad:
 | --------------------------------------- | ------------------------------------------- |
 | **F10**, or hold **Select** 2 s         | Display Settings                            |
 | **F9**                                  | sharpening on or off                        |
-| **F4**, or **Back** on the title screen | asks "Exit Resogun?" (No is selected first) |
+| **F4**, or **Back** on the title screen | asks "Exit Tempest?" (No is selected first) |
 | **Alt+F4**                              | closes the game without confirmation        |
 
 ## When something goes wrong
 
-The game logs to `resogun.log` in the `log` folder of your save folder. If it closes by itself, it
+The game logs to `tempest.log` in the `log` folder of your save folder. If it closes by itself, it
 says so and keeps that log as `crash-<date>-<time>.log` in the same folder; attach that file when
 you report the problem. If the picture freezes, leave the game running for half a minute before
 closing it: after 20 seconds without a new frame it writes what every thread is doing to the log.
@@ -143,4 +176,4 @@ I (human) am a programmer, but I know nothing about C++ which is required to mak
 
 Based on and inspired by [theatrhythm-fbl-pc](https://github.com/YAPhoa/theatrhythm-fbl-pc).
 
-GPL-2.0-or-later, see [LICENSE](LICENSE). Runtime follows [shadPS4](https://github.com/shadps4-emu/shadPS4). Resogun is a game by Housemarque, published by Sony Interactive Entertainment; this project is not affiliated with or endorsed by either.
+GPL-2.0-or-later, see [LICENSE](LICENSE). Runtime follows [shadPS4](https://github.com/shadps4-emu/shadPS4). Tempest is a game by Housemarque, published by Sony Interactive Entertainment; this project is not affiliated with or endorsed by either.

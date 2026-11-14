@@ -45,7 +45,7 @@ bool AvPlayerFileStreamer::Init(std::string_view path) {
 }
 
 void AvPlayerFileStreamer::Reset() {
-    // resogun: nothing to do. Clearing m_position behind avio's back desynchronised its
+    // tempest: nothing to do. Clearing m_position behind avio's back desynchronised its
     // buffer, and seeking avio to 0 makes FFmpeg's mov demuxer drop its sample index (it
     // re-reads the file when pb->pos is 0). Restarts seek through avformat_seek_file instead.
 }
@@ -62,7 +62,7 @@ s32 AvPlayerFileStreamer::ReadPacket(void* opaque, u8* buffer, s32 size) {
     const auto ptr = self->m_file_replacement.object_ptr;
     const auto bytes_read = read_offset(ptr, buffer, self->m_position, size);
     if (bytes_read <= 0 && size != 0) {
-        // resogun: the game's reader failed inside the file.
+        // tempest: the game's reader failed inside the file.
         LOG_WARNING(Lib_AvPlayer, "File replacement read at {} ({} bytes of {}) returned {}",
                     self->m_position, size, self->m_file_size, bytes_read);
         return AVERROR_EOF;

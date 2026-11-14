@@ -1,21 +1,21 @@
 {
   "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
   "format": 1,
-  "name": "Resogun (PS4) Recompiled",
+  "name": "Tempest (PS4) Recompiled",
   "repo": "rcostanza/resogun-recomp",
   "game": {
     "kind": "folder",
-    "label": "The folder of your decrypted dump of Resogun for PS4 (CUSA00038, update 1.10): eboot.bin, sce_module, sce_sys, audio.pck and stream.dat.",
+    "label": "The folder of your decrypted dump of Tempest for PS4 (CUSA00038, update 1.10): eboot.bin, sce_module, sce_sys, audio.pck and stream.dat.",
     "check": { "file": "stream.dat" }
   },
   "prepare": {
-    "program": ["resogun-setup"],
+    "program": ["tempest-setup"],
     "args": ["--game", "{game}", "--save", "{install}/save", "--copy-saves", "--progress"],
     "label": "The game, prepared from your dump",
     "timeout": 600
   },
   "start": {
-    "program": ["resogun"]
+    "program": ["tempest"]
   },
   "config": [
     {
@@ -149,6 +149,6 @@
     }
   ],
   "actions": [
-    { "id": "saves", "label": "Saves", "help": "Your saves, trophies, settings and resogun.log.", "open": "saves" }
+    { "id": "saves", "label": "Saves", "help": "Your saves, trophies, settings and tempest.log.", "open": "saves" }
   ]
 }

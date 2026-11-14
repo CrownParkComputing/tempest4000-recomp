@@ -1,7 +1,7 @@
-# resogun GPU library: shadPS4 video core + shader recompiler + Gnm/VideoOut
+# tempest GPU library: shadPS4 video core + shader recompiler + Gnm/VideoOut
 # drivers, adapted to the C runtime through shims in shim/.
 cmake_minimum_required(VERSION 3.24)
-project(resogun_gpu LANGUAGES C CXX)
+project(tempest_gpu LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -14,7 +14,7 @@ add_compile_options(-fno-omit-frame-pointer)
 find_package(Vulkan REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Boost REQUIRED)
-# resogun (Windows): MSYS2 has no magic_enum/miniz packages; the submodules are used instead.
+# tempest (Windows): MSYS2 has no magic_enum/miniz packages; the submodules are used instead.
 find_package(magic_enum QUIET)
 if (NOT magic_enum_FOUND)
     add_library(magic_enum INTERFACE)
@@ -95,88 +95,88 @@ set(COMMON
     shadps4/common/string_util.cpp shadps4/common/thread.cpp shadps4/common/signal_context.cpp
     shim/common/logging/log.cpp)
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
-# Upstream HLE libraries compiled unchanged (or with "resogun:" patches); the C runtime
+# Upstream HLE libraries compiled unchanged (or with "tempest:" patches); the C runtime
 # resolves first, so these only answer imports it does not implement.
 file(GLOB HLE_LIBRARIES CONFIGURE_DEPENDS
     shadps4/core/libraries/hmd/*.cpp shadps4/core/libraries/vr_tracker/*.cpp
     shadps4/core/libraries/web_browser_dialog/*.cpp shadps4/core/libraries/disc_map/*.cpp
     shadps4/core/libraries/network/ssl.cpp shadps4/core/libraries/screenshot/*.cpp)
 # FFmpeg: the minimal static build of tools/build_ffmpeg.sh (H.264, AAC and PNG decoders, the MP4
-# demuxer, the file protocol, swscale, swresample), which build.sh makes in out/ffmpeg and passes as RESOGUN_FFMPEG_DIR.
+# demuxer, the file protocol, swscale, swresample), which build.sh makes in out/ffmpeg and passes as TEMPEST_FFMPEG_DIR.
 # Linked with its private libraries (zlib, and bcrypt or libm/pthread), as pkg-config --static lists.
-set(RESOGUN_FFMPEG_DIR "" CACHE PATH "Prefix of the minimal FFmpeg (tools/build_ffmpeg.sh)")
-if (NOT EXISTS "${RESOGUN_FFMPEG_DIR}/lib/pkgconfig/libavformat.pc")
-    message(FATAL_ERROR "RESOGUN_FFMPEG_DIR must name the prefix tools/build_ffmpeg.sh built (build.sh does it)")
+set(TEMPEST_FFMPEG_DIR "" CACHE PATH "Prefix of the minimal FFmpeg (tools/build_ffmpeg.sh)")
+if (NOT EXISTS "${TEMPEST_FFMPEG_DIR}/lib/pkgconfig/libavformat.pc")
+    message(FATAL_ERROR "TEMPEST_FFMPEG_DIR must name the prefix tools/build_ffmpeg.sh built (build.sh does it)")
 endif()
-set(ENV{PKG_CONFIG_PATH} "${RESOGUN_FFMPEG_DIR}/lib/pkgconfig")
-set(RESOGUN_FFMPEG_MODULES libavformat libavcodec libswscale libswresample libavutil)
-execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --static --libs ${RESOGUN_FFMPEG_MODULES}
-    OUTPUT_VARIABLE RESOGUN_FFMPEG_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
-execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --cflags-only-I ${RESOGUN_FFMPEG_MODULES}
-    OUTPUT_VARIABLE RESOGUN_FFMPEG_CFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+set(ENV{PKG_CONFIG_PATH} "${TEMPEST_FFMPEG_DIR}/lib/pkgconfig")
+set(TEMPEST_FFMPEG_MODULES libavformat libavcodec libswscale libswresample libavutil)
+execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --static --libs ${TEMPEST_FFMPEG_MODULES}
+    OUTPUT_VARIABLE TEMPEST_FFMPEG_LIBS OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND ${PKG_CONFIG_EXECUTABLE} --cflags-only-I ${TEMPEST_FFMPEG_MODULES}
+    OUTPUT_VARIABLE TEMPEST_FFMPEG_CFLAGS OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
 unset(ENV{PKG_CONFIG_PATH})
-separate_arguments(RESOGUN_FFMPEG_LIBS NATIVE_COMMAND "${RESOGUN_FFMPEG_LIBS}")
-string(REGEX REPLACE "-I" "" RESOGUN_FFMPEG_CFLAGS "${RESOGUN_FFMPEG_CFLAGS}")
-separate_arguments(RESOGUN_FFMPEG_CFLAGS NATIVE_COMMAND "${RESOGUN_FFMPEG_CFLAGS}")
-add_library(resogun_ffmpeg INTERFACE)
-target_include_directories(resogun_ffmpeg SYSTEM INTERFACE ${RESOGUN_FFMPEG_CFLAGS})
-target_link_libraries(resogun_ffmpeg INTERFACE ${RESOGUN_FFMPEG_LIBS})
-add_library(Resogun::FFmpeg ALIAS resogun_ffmpeg)
+separate_arguments(TEMPEST_FFMPEG_LIBS NATIVE_COMMAND "${TEMPEST_FFMPEG_LIBS}")
+string(REGEX REPLACE "-I" "" TEMPEST_FFMPEG_CFLAGS "${TEMPEST_FFMPEG_CFLAGS}")
+separate_arguments(TEMPEST_FFMPEG_CFLAGS NATIVE_COMMAND "${TEMPEST_FFMPEG_CFLAGS}")
+add_library(tempest_ffmpeg INTERFACE)
+target_include_directories(tempest_ffmpeg SYSTEM INTERFACE ${TEMPEST_FFMPEG_CFLAGS})
+target_link_libraries(tempest_ffmpeg INTERFACE ${TEMPEST_FFMPEG_LIBS})
+add_library(Tempest::FFmpeg ALIAS tempest_ffmpeg)
 file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp)
-# Static and linked into resogun, whose runtime_* symbols it calls (a Windows DLL cannot
+# Static and linked into tempest, whose runtime_* symbols it calls (a Windows DLL cannot
 # leave them unresolved; Linux uses the same single executable).
-add_library(resogun_gpu STATIC ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
+add_library(tempest_gpu STATIC ${VIDEO_CORE} ${RECOMPILER} ${COMMON} ${SHIM_SOURCES}
     shadps4/core/libraries/gnmdriver/gnmdriver.cpp
     shadps4/core/libraries/videoout/driver.cpp shadps4/core/libraries/videoout/video_out.cpp
     shadps4/core/libraries/kernel/equeue.cpp ${AVPLAYER} ${HLE_LIBRARIES}
     shadps4/core/libraries/videodec/video_utils.cpp)
-add_dependencies(resogun_gpu host_shaders)
+add_dependencies(tempest_gpu host_shaders)
 # The PS4 system UI overlay (save list, text entry, trophy notices): Dear ImGui
 # (third_party/imgui, MIT) with its Vulkan backend and embedded fonts (third_party/fonts).
-target_sources(resogun_gpu PRIVATE third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp
+target_sources(tempest_gpu PRIVATE third_party/imgui/imgui.cpp third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_tables.cpp third_party/imgui/imgui_widgets.cpp
     third_party/imgui/backends/imgui_impl_vulkan.cpp)
-target_include_directories(resogun_gpu PRIVATE third_party/imgui third_party/imgui/backends)
-target_compile_definitions(resogun_gpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
-    RESOGUN_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf"
-    RESOGUN_EXIT_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/orbitron/Orbitron[wght].ttf")
-set_source_files_properties(shim/resogun_overlay.cpp PROPERTIES
+target_include_directories(tempest_gpu PRIVATE third_party/imgui third_party/imgui/backends)
+target_compile_definitions(tempest_gpu PRIVATE IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+    TEMPEST_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf"
+    TEMPEST_EXIT_FONT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/orbitron/Orbitron[wght].ttf")
+set_source_files_properties(shim/tempest_overlay.cpp PROPERTIES
     OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/DejaVuSans.ttf;${CMAKE_CURRENT_SOURCE_DIR}/third_party/fonts/orbitron/Orbitron[wght].ttf")
-target_include_directories(resogun_gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/half/include)
-target_compile_definitions(resogun_gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
-target_compile_options(resogun_gpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
-target_link_libraries(resogun_gpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
-    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 Resogun::FFmpeg miniz::miniz Zydis::Zydis sirit)
-target_include_directories(resogun_gpu PRIVATE third_party/xbyak)
-target_link_libraries(resogun_gpu PUBLIC PkgConfig::X11 Vulkan::Vulkan)
+target_include_directories(tempest_gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_party/half/include)
+target_compile_definitions(tempest_gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
+target_compile_options(tempest_gpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
+target_link_libraries(tempest_gpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
+    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 Tempest::FFmpeg miniz::miniz Zydis::Zydis sirit)
+target_include_directories(tempest_gpu PRIVATE third_party/xbyak)
+target_link_libraries(tempest_gpu PUBLIC PkgConfig::X11 Vulkan::Vulkan)
 
-# resogun: the loader and the HLE runtime, linked with resogun_gpu here, where CMake knows
+# tempest: the loader and the HLE runtime, linked with tempest_gpu here, where CMake knows
 # its dependencies (build.sh builds them with ninja).
 
 # -std=c11 hides POSIX from glibc's headers (sigjmp_buf in runtime.h, among others).
 add_compile_options($<$<COMPILE_LANGUAGE:C>:-D_DEFAULT_SOURCE>)
-file(GLOB RESOGUN_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
+file(GLOB TEMPEST_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
 # LibAtrac9 (third_party/libatrac9, MIT): the ATRAC9 decoder NGS2's sampler voices need, which
 # is how this game's music and effects are stored. Third-party C, built without this tree's
 # -Werror and its C11 strictness.
-file(GLOB RESOGUN_ATRAC9 CONFIGURE_DEPENDS ../third_party/libatrac9/*.c)
-set_source_files_properties(${RESOGUN_ATRAC9} PROPERTIES COMPILE_OPTIONS "-w" C_STANDARD 99)
+file(GLOB TEMPEST_ATRAC9 CONFIGURE_DEPENDS ../third_party/libatrac9/*.c)
+set_source_files_properties(${TEMPEST_ATRAC9} PROPERTIES COMPILE_OPTIONS "-w" C_STANDARD 99)
 # isa_emulate runs inside guest code: no XMM/YMM.
 set_source_files_properties(../src/isa_emulate.c PROPERTIES COMPILE_OPTIONS "-mgeneral-regs-only")
-add_executable(resogun ../src/loader.c ${RESOGUN_RUNTIME} ${RESOGUN_ATRAC9} ../src/cpu_check.c
+add_executable(tempest ../src/loader.c ${TEMPEST_RUNTIME} ${TEMPEST_ATRAC9} ../src/cpu_check.c
     ../src/vulkan_smoke.c ../src/isa_rewrite.c ../src/isa_emulate.c ../src/launcher.c)
-set_target_properties(resogun PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
-target_compile_options(resogun PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
-target_include_directories(resogun PRIVATE .. ../src ../third_party/libatrac9)
-target_link_libraries(resogun PRIVATE resogun_gpu -pthread)
+set_target_properties(tempest PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
+target_compile_options(tempest PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
+target_include_directories(tempest PRIVATE .. ../src ../third_party/libatrac9)
+target_link_libraries(tempest PRIVATE tempest_gpu -pthread)
 # Not PIE: host heap objects handed to the guest stay in the brk heap, below 1 TiB (loader.c main).
-set_target_properties(resogun PROPERTIES POSITION_INDEPENDENT_CODE OFF)
-target_link_options(resogun PRIVATE -no-pie)
-target_link_libraries(resogun PRIVATE ${CMAKE_DL_LIBS} m)
-# resogun-setup (setup/): the same install, asking in a terminal or with the desktop's dialogs (SDL).
-add_executable(resogun-setup ../setup/main_linux.cpp ../setup/setup.cpp ../setup/pkgdec.cpp)
-target_link_libraries(resogun-setup PRIVATE PkgConfig::SDL3)
-# resogun: runtime and renderer unit tests (bash build.sh --test builds and runs every *-test).
+set_target_properties(tempest PROPERTIES POSITION_INDEPENDENT_CODE OFF)
+target_link_options(tempest PRIVATE -no-pie)
+target_link_libraries(tempest PRIVATE ${CMAKE_DL_LIBS} m)
+# tempest-setup (setup/): the same install, asking in a terminal or with the desktop's dialogs (SDL).
+add_executable(tempest-setup ../setup/main_linux.cpp ../setup/setup.cpp ../setup/pkgdec.cpp)
+target_link_libraries(tempest-setup PRIVATE PkgConfig::SDL3)
+# tempest: runtime and renderer unit tests (bash build.sh --test builds and runs every *-test).
 add_executable(audio-test EXCLUDE_FROM_ALL ../tests/test_audio.c)
 set_target_properties(audio-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
 target_compile_options(audio-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
@@ -220,19 +220,19 @@ add_executable(pipeline-binary-cache-test EXCLUDE_FROM_ALL ../tests/test_pipelin
     ../tests/test_gpu_runtime_stubs.cpp)
 target_compile_definitions(pipeline-binary-cache-test PRIVATE NOMINMAX)
 target_include_directories(pipeline-binary-cache-test PRIVATE shim shadps4)
-target_link_libraries(pipeline-binary-cache-test PRIVATE resogun_gpu)
+target_link_libraries(pipeline-binary-cache-test PRIVATE tempest_gpu)
 target_compile_options(pipeline-binary-cache-test PRIVATE -fPIC)
 add_executable(pipeline-binary-initialization-test EXCLUDE_FROM_ALL
     ../tests/test_pipeline_binary_initialization.cpp ../tests/test_gpu_runtime_stubs.cpp)
 target_compile_definitions(pipeline-binary-initialization-test PRIVATE NOMINMAX)
 target_include_directories(pipeline-binary-initialization-test PRIVATE shim shadps4)
-target_link_libraries(pipeline-binary-initialization-test PRIVATE resogun_gpu)
+target_link_libraries(pipeline-binary-initialization-test PRIVATE tempest_gpu)
 target_compile_options(pipeline-binary-initialization-test PRIVATE -fPIC)
 set_source_files_properties(../tests/test_pipeline_binary_cache.cpp PROPERTIES
     COMPILE_OPTIONS "-fvisibility=hidden;-fvisibility-inlines-hidden")
-add_executable(png-decode-test EXCLUDE_FROM_ALL ../tests/test_png_decode.cpp shim/resogun_png.cpp)
+add_executable(png-decode-test EXCLUDE_FROM_ALL ../tests/test_png_decode.cpp shim/tempest_png.cpp)
 target_compile_options(png-decode-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
-target_link_libraries(png-decode-test PRIVATE Resogun::FFmpeg)
+target_link_libraries(png-decode-test PRIVATE Tempest::FFmpeg)
 # The AES-128 and XTS of the setup (setup/pkgdec.cpp): the test includes the file itself.
 add_executable(pkgdec-test EXCLUDE_FROM_ALL ../tests/test_pkgdec.cpp ../setup/setup.cpp)
 target_compile_options(pkgdec-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)

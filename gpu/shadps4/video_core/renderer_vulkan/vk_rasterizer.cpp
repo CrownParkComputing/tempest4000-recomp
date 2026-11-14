@@ -7,8 +7,8 @@
 #include <set>
 #include <format>
 #include <xxhash.h>
-#include "resogun_settings.h"
-#include "resogun_toggles.h"
+#include "tempest_settings.h"
+#include "tempest_toggles.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_pass_census.h"
 #include "common/debug.h"
@@ -26,7 +26,7 @@
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_gpu_profiler.h"
-#include "resogun_threads.h"
+#include "tempest_threads.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
@@ -67,7 +67,7 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
         constant_ring = std::make_unique<ConstantRing>(instance, scheduler);
         draw_pipe = std::make_unique<DrawPipe>(&RunDrawPacket, this);
     }
-    // resogun: this thread joins the texture binding helper before it changes image state.
+    // tempest: this thread joins the texture binding helper before it changes image state.
     runtime.SetImageAccessHook(&JoinBindHelper, this);
     scheduler.SetSubmitCallback([this](Vulkan::SubmitInfo& info) {
         runtime.FlushBarriers();
@@ -175,7 +175,7 @@ VideoCore::ImageId Rasterizer::FindTargetMemoized(VideoCore::TextureCache::Image
     };
     (append(parts), ...);
     const u64 generation = texture_cache.RegistryGeneration();
-    const bool memo_enabled = !ResogunToggle::Disabled(ResogunToggle::TextureBindingMemo);
+    const bool memo_enabled = !TempestToggle::Disabled(TempestToggle::TextureBindingMemo);
     if (memo_enabled && last.generation == generation && last.key_size == key_size &&
         std::memcmp(last.key.data(), key.data(), key_size) == 0) {
         texture_cache.MarkFound(last.image_id);
@@ -302,7 +302,7 @@ void Rasterizer::EliminateFastClear() {
     ScopeMarkerEnd();
 }
 
-// resogun: two-stage draw pipeline (vk_draw_pipe.h). Packet layout, 8-byte aligned parts:
+// tempest: two-stage draw pipeline (vk_draw_pipe.h). Packet layout, 8-byte aligned parts:
 // DrawPacket, u16 block indices, u32 block words (RegDirty::BlockWords each), then per stage a
 // PacketStage with its user data and flattened user data, then (verification) the full file.
 namespace {
@@ -339,7 +339,7 @@ constexpr u32 AlignPacket(u32 size) {
 }
 u32 VerifyInterval() {
     static const u32 interval = [] {
-        const char* env = std::getenv("RESOGUN_PIPE_VERIFY");
+        const char* env = std::getenv("TEMPEST_PIPE_VERIFY");
         return env ? static_cast<u32>(std::strtoul(env, nullptr, 10)) : 0u;
     }();
     return interval;
@@ -347,22 +347,22 @@ u32 VerifyInterval() {
 } // namespace
 
 bool Rasterizer::DrawPipeWanted() {
-    const char* env = std::getenv("RESOGUN_DRAW_PIPE");
+    const char* env = std::getenv("TEMPEST_DRAW_PIPE");
     if (env && env[0]) {
         return env[0] == '1';
     }
     // Stage B spins while draws flow. Measured ahead with 16 threads (+19%) and with 4 cores /
     // 8 threads (taskset, Steam Deck-like: +18%).
-    return ResogunThreads::Available() >= 8;
+    return TempestThreads::Available() >= 8;
 }
 
 bool Rasterizer::UseDrawPipe() const {
-    return draw_pipe && !host_markers_enabled && !ResogunToggle::Disabled(ResogunToggle::DrawPipeline);
+    return draw_pipe && !host_markers_enabled && !TempestToggle::Disabled(TempestToggle::DrawPipeline);
 }
 
 bool Rasterizer::OnStageA() const {
 #ifdef _WIN32
-    // resogun (Windows): libc++ compares std::thread::id through winpthreads' pthread_equal,
+    // tempest (Windows): libc++ compares std::thread::id through winpthreads' pthread_equal,
     // which asks the kernel (GetThreadId) for both threads: two system calls per check, many
     // per draw. The numeric thread id comes from the TEB.
     return static_cast<u32>(gettid()) == liverpool->GetGpuCommandProcessorThreadId();
@@ -372,7 +372,7 @@ bool Rasterizer::OnStageA() const {
 }
 
 namespace {
-/// Stage A: cycles waited per drain site (RESOGUN_FRAME_STATS), keyed by function name and line.
+/// Stage A: cycles waited per drain site (TEMPEST_FRAME_STATS), keyed by function name and line.
 std::unordered_map<const char*, std::unordered_map<u32, u64>> drain_sites;
 } // namespace
 
@@ -380,7 +380,7 @@ void Rasterizer::DrainDrawPipe(u32 reason, u32 line, const char* function) {
     if (!draw_pipe || !OnStageA()) {
         return;
     }
-    static const bool stats = std::getenv("RESOGUN_FRAME_STATS") != nullptr;
+    static const bool stats = std::getenv("TEMPEST_FRAME_STATS") != nullptr;
     if (!stats) {
         draw_pipe->Drain(reason);
         return;
@@ -456,7 +456,7 @@ bool Rasterizer::PendingWriteOverlaps(VAddr address, u64 size) {
 void Rasterizer::CollectRingBindings(const Shader::Info& stage, const PreparedDraw* prepared,
                            boost::container::static_vector<RingBinding, Shader::NUM_BUFFERS>& out) {
     const PreparedStage* prepared_stage = nullptr;
-    if (prepared && !ResogunToggle::Disabled(ResogunToggle::PreparedResources)) {
+    if (prepared && !TempestToggle::Disabled(TempestToggle::PreparedResources)) {
         for (u32 i = 0; i < prepared->num_stages; ++i) {
             const auto& candidate = prepared->stages[i];
             if (&candidate.program->info == &stage &&
@@ -477,7 +477,7 @@ void Rasterizer::CollectRingBindings(const Shader::Info& stage, const PreparedDr
         if (source) {
             std::memcpy(dst, source, size);
         } else {
-            // resogun: the backing view does not fault on pages a pending image readback
+            // tempest: the backing view does not fault on pages a pending image readback
             // protects, so wait here as the fault did. Stage B is drained first: the wait can
             // flush the command buffer it records into. Stage B can also publish a readback (and
             // retire it) while the copy runs, which the fault caught; a new readback generation
@@ -570,7 +570,7 @@ void Rasterizer::PostDraw(const Pipeline* pipeline, const PreparedDraw* used_pre
         if (stage) {
             auto& ring = rings[num_stages];
             ring.clear();
-            if (constant_ring && !ResogunToggle::Disabled(ResogunToggle::ConstantRing)) {
+            if (constant_ring && !TempestToggle::Disabled(TempestToggle::ConstantRing)) {
                 CollectRingBindings(*stage, used_prepared, ring);
             }
             ++num_stages;
@@ -671,7 +671,7 @@ void Rasterizer::RetireSubmission() {
 }
 
 bool Rasterizer::RunInOrder(OrderedTask task, const void* data, u32 size, u64 toggle) {
-    if (!UseDrawPipe() || ResogunToggle::Disabled(toggle)) {
+    if (!UseDrawPipe() || TempestToggle::Disabled(toggle)) {
         DrainDrawPipe(DrawPipe::ReasonRasterizer);
         task(*this, static_cast<const u8*>(data));
         return false;
@@ -818,7 +818,7 @@ void Rasterizer::RunDrawPacket(void* context, const u8* data, u32 size) {
 }
 
 void Rasterizer::PrintPipeStats() {
-    static const bool stats = std::getenv("RESOGUN_FRAME_STATS") != nullptr;
+    static const bool stats = std::getenv("TEMPEST_FRAME_STATS") != nullptr;
     if (!stats || (draw_pipe->packets & 1023) != 0) {
         return;
     }
@@ -898,13 +898,13 @@ bool Rasterizer::FilterDrawPasses() const {
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* prepared) {
     RENDERER_TRACE;
-    ResogunStats::draws.fetch_add(1, std::memory_order_relaxed);
+    TempestStats::draws.fetch_add(1, std::memory_order_relaxed);
 
-    // resogun: with the draw pipeline this thread only selects the pipeline and hands the draw
+    // tempest: with the draw pipeline this thread only selects the pipeline and hands the draw
     // to the recording thread (DrawRecord there); draws FilterDraw handles itself run here.
     const bool pipelined = UseDrawPipe();
     if (pipelined && !FilterDrawPasses() &&
-        !ResogunToggle::Disabled(ResogunToggle::PipelinedMemoryWrites)) {
+        !TempestToggle::Disabled(TempestToggle::PipelinedMemoryWrites)) {
         PostDraw(nullptr, nullptr, false, 0);
         return;
     }
@@ -937,7 +937,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* pre
 
 void Rasterizer::DiagPassBoundary(bool force) {
     static const bool enabled = [] {
-        const char* env = std::getenv("RESOGUN_DIAG_IMAGES");
+        const char* env = std::getenv("TEMPEST_DIAG_IMAGES");
         return env && *env == '1';
     }();
     if (!enabled) {
@@ -973,13 +973,13 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     }
     DiagPassBoundary(false);
     const auto& regs = Regs();
-    // resogun: the pass copying a finished frame to a display buffer; the previous draw's
+    // tempest: the pass copying a finished frame to a display buffer; the previous draw's
     // target is that frame.
     if (regs.color_buffers[0] && FrameCapture::IsDisplayBuffer(regs.color_buffers[0].Address()) &&
         regs.color_buffers[0].Address() != last_display_buffer) {
-        // Count the frame (RESOGUN_GPU_PROFILE, RESOGUN_BUFFER_STATS) once per display buffer,
+        // Count the frame (TEMPEST_GPU_PROFILE, TEMPEST_BUFFER_STATS) once per display buffer,
         // since the HUD draws into it as well.
-        // resogun: assumes flips rotate display buffers; a single-buffer game counts one frame.
+        // tempest: assumes flips rotate display buffers; a single-buffer game counts one frame.
         last_display_buffer = regs.color_buffers[0].Address();
         NoteFrameStart();
     }
@@ -987,7 +987,7 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
 
     PrepareRenderState(pipeline);
     const PreparedDraw* draw_prepared = bind_prepared;
-    // resogun: vertex and index buffers are resolved while the helper binds textures (their
+    // tempest: vertex and index buffers are resolved while the helper binds textures (their
     // commands are recorded after BeginRendering, as before).
     draw_inputs = {pipeline, draw_prepared, index_offset, is_indexed, true, false};
     const bool bound = BindResources(pipeline);
@@ -1076,10 +1076,10 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
                               u32 max_count, VAddr count_address, u16 vertex_sgpr_offset,
                               u16 instance_sgpr_offset) {
     RENDERER_TRACE;
-    // resogun: like direct draws, handed to the recording thread after the pipeline selection
+    // tempest: like direct draws, handed to the recording thread after the pipeline selection
     // (else the GPU thread waited here for a whole frame of queued draws).
     const bool pipelined = UseDrawPipe() && FilterDrawPasses() &&
-                           !ResogunToggle::Disabled(ResogunToggle::PipelinedIndirectDraws);
+                           !TempestToggle::Disabled(TempestToggle::PipelinedIndirectDraws);
     if (!pipelined) {
         DrainDrawPipe();
         scheduler.PopPendingOperations();
@@ -1183,9 +1183,9 @@ void Rasterizer::DrawIndirectRecord(const GraphicsPipeline* pipeline, bool is_in
 
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
-    ResogunStats::dispatches.fetch_add(1, std::memory_order_relaxed);
-    // resogun: like draws, handed to the draw recording thread after the pipeline selection.
-    const bool pipelined = UseDrawPipe() && !ResogunToggle::Disabled(ResogunToggle::PipelinedDispatch);
+    TempestStats::dispatches.fetch_add(1, std::memory_order_relaxed);
+    // tempest: like draws, handed to the draw recording thread after the pipeline selection.
+    const bool pipelined = UseDrawPipe() && !TempestToggle::Disabled(TempestToggle::PipelinedDispatch);
     if (!pipelined) {
         DrainDrawPipe();
     }
@@ -1256,10 +1256,10 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     });
     DebugState.IncDispatch();
 
-    // resogun diagnostics: RESOGUN_DIAG_IMAGES=1 writes the images a dispatch read and wrote, after
-    // it, while a frame capture records (RESOGUN_CAPTURE_TRIGGER).
+    // tempest diagnostics: TEMPEST_DIAG_IMAGES=1 writes the images a dispatch read and wrote, after
+    // it, while a frame capture records (TEMPEST_CAPTURE_TRIGGER).
     static const bool diag_images = [] {
-        const char* env = std::getenv("RESOGUN_DIAG_IMAGES");
+        const char* env = std::getenv("TEMPEST_DIAG_IMAGES");
         return env && *env == '1';
     }();
     if (diag_images && FrameCapture::IsRecording()) {
@@ -1277,8 +1277,8 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     RENDERER_TRACE;
-    // resogun: handed to the recording thread like direct dispatches.
-    const bool pipelined = UseDrawPipe() && !ResogunToggle::Disabled(ResogunToggle::PipelinedIndirectDraws);
+    // tempest: handed to the recording thread like direct dispatches.
+    const bool pipelined = UseDrawPipe() && !TempestToggle::Disabled(TempestToggle::PipelinedIndirectDraws);
     if (!pipelined) {
         DrainDrawPipe();
     }
@@ -1363,7 +1363,7 @@ void Rasterizer::OnSubmit() {
 }
 
 void Rasterizer::ReloadOnTrigger() {
-    static const char* trigger = std::getenv("RESOGUN_RELOAD_TRIGGER");
+    static const char* trigger = std::getenv("TEMPEST_RELOAD_TRIGGER");
     if (!trigger) {
         return;
     }
@@ -1430,7 +1430,7 @@ void Rasterizer::CaptureDropped(const char* reason) {
 
 const PreparedStage* Rasterizer::FindPreparedStage(const Shader::Info& stage) const {
     // Sharps a draw-preparation worker read from the same flattened user data.
-    if (!bind_prepared || ResogunToggle::Disabled(ResogunToggle::PreparedResources)) {
+    if (!bind_prepared || TempestToggle::Disabled(TempestToggle::PreparedResources)) {
         return nullptr;
     }
     for (u32 i = 0; i < bind_prepared->num_stages; ++i) {
@@ -1447,7 +1447,7 @@ const PreparedStage* Rasterizer::FindPreparedStage(const Shader::Info& stage) co
 
 bool Rasterizer::BindHelperWanted() {
     // A spinning helper pays off only with cores to spare (the recording thread spins too).
-    const char* env = std::getenv("RESOGUN_TEXTURE_HELPER");
+    const char* env = std::getenv("TEMPEST_TEXTURE_HELPER");
     if (env && env[0]) {
         return env[0] == '1';
     }
@@ -1457,9 +1457,9 @@ bool Rasterizer::BindHelperWanted() {
 
 bool Rasterizer::HelperEligible(const Pipeline* pipeline) const {
     if (pipeline->IsCompute() || !bind_helper.Available() || FrameCapture::Active() ||
-        ResogunToggle::Disabled(ResogunToggle::TextureBindHelper) ||
-        ResogunToggle::Disabled(ResogunToggle::TextureBindingMemo) ||
-        ResogunToggle::Disabled(ResogunToggle::UpdateImageFastPath)) {
+        TempestToggle::Disabled(TempestToggle::TextureBindHelper) ||
+        TempestToggle::Disabled(TempestToggle::TextureBindingMemo) ||
+        TempestToggle::Disabled(TempestToggle::UpdateImageFastPath)) {
         return false;
     }
     for (const auto* stage : pipeline->GetStages()) {
@@ -1553,7 +1553,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
 
     bool uses_dma = false;
 
-    static const bool stats = std::getenv("RESOGUN_FRAME_STATS") != nullptr;
+    static const bool stats = std::getenv("TEMPEST_FRAME_STATS") != nullptr;
     if (stats && ((helper_full + helper_partial + helper_serial) & 1023) == 0) {
         static auto window = std::chrono::steady_clock::now();
         const auto now = std::chrono::steady_clock::now();
@@ -1590,7 +1590,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             uses_dma |= stage->uses_dma;
         }
     } else {
-        // resogun: textures on the helper, buffers here. Without mip arrays every stage's
+        // tempest: textures on the helper, buffers here. Without mip arrays every stage's
         // descriptors are [buffers][images][samplers], one each, so both sides know their
         // binding numbers and descriptor write slots up front.
         struct BufferStage {
@@ -1631,7 +1631,7 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             auto& stage = buffer_stages[i];
             BindBuffers(*stage.info, stage.prepared, stage.binding, push_data, stage.write_index);
         }
-        if (draw_inputs.pending && !ResogunToggle::Disabled(ResogunToggle::EarlyDrawInputs)) {
+        if (draw_inputs.pending && !TempestToggle::Disabled(TempestToggle::EarlyDrawInputs)) {
             ResolveVertexBuffers(draw_inputs.pipeline, draw_inputs.prepared);
             if (draw_inputs.is_indexed) {
                 ResolveIndexBuffer(draw_inputs.index_offset);
@@ -1664,7 +1664,7 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline, const Prepa
 }
 
 void Rasterizer::EmitVertexBuffers() {
-    // resogun: only the used entries go into the recording chunk (the static vectors hold 32 of
+    // tempest: only the used entries go into the recording chunk (the static vectors hold 32 of
     // each: ~3 KiB copied per draw).
     auto& v = vertex_binds;
     const bool dynamic_input = instance.IsVertexInputDynamicState();
@@ -1719,7 +1719,7 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
     const PreparedVertexInputs* ready =
         prepared && prepared->vertex.valid && instance.IsVertexInputDynamicState() && fetch &&
                 fetch->attributes.size() == prepared->vertex.count && !FrameCapture::Active() &&
-                !ResogunToggle::Disabled(ResogunToggle::PreparedResources)
+                !TempestToggle::Disabled(TempestToggle::PreparedResources)
             ? &prepared->vertex
             : nullptr;
     if (ready) {
@@ -1888,7 +1888,7 @@ bool Rasterizer::IsComputeMetaClear(const Pipeline* pipeline) {
     // If a shader wants to encode HTILE, for example, from a depth image it will have to compute
     // proper tile address from dispatch invocation id. This address calculation contains an xor
     // operation so use it as a heuristic for metadata writes that are probably not clears.
-    // resogun: a clear shader reads at most a couple of parameter buffers. Metadata addresses
+    // tempest: a clear shader reads at most a couple of parameter buffers. Metadata addresses
     // stay registered after their render targets are freed, so a dispatch that reads more
     // buffers and writes over a stale one is ordinary compute work and must still run.
     u32 read = 0;
@@ -2045,7 +2045,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         const RingBinding* ring = num_ring_stages ? FindRingBinding(stage, buffer_index) : nullptr;
         if (ring) {
             // Copied by the GPU command thread into the constant ring (read-only).
-            // resogun: dump the ring's own copy, not the guest address. A binding whose bytes came
+            // tempest: dump the ring's own copy, not the guest address. A binding whose bytes came
             // from the host keeps `address` as a label only, and it can be zero; IsValidGpuMapping
             // merely range checks against the 40 bit GPU limit, so zero passed through and the
             // dump read address zero (crash on the frame capture key).
@@ -2125,7 +2125,7 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
                               vsharp.GetSize(), size, stage.pgm_hash);
                 }
-                ResogunStats::gpu_write_tag = stage.pgm_hash;
+                TempestStats::gpu_write_tag = stage.pgm_hash;
                 const auto [buffer, offset] = buffer_cache.ObtainBuffer(
                     vsharp.base_address, size, desc.is_written, desc.is_formatted);
                 const u64 offset_aligned = Common::AlignDown(offset, alignment);
@@ -2161,7 +2161,7 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
                                                                    u64 hash) {
     std::array<u64, 4> key;
     std::memcpy(key.data(), &sharp, sizeof(key));
-    // resogun: needs_native too, since FindImage resolves partial height views only for it.
+    // tempest: needs_native too, since FindImage resolves partial height views only for it.
     const u32 flags = u32(res.is_written) | u32(res.is_depth) << 1 | u32(res.is_array) << 2 |
                       u32(res.needs_native) << 3;
     // Two-way set associative: a frame binds a few thousand distinct T#s.
@@ -2169,7 +2169,7 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
     const auto matches = [&](const ImageDescCacheEntry& e) {
         return e.flags == flags && e.sharp == key;
     };
-    const bool disabled = ResogunToggle::Disabled(ResogunToggle::ImageDescCache);
+    const bool disabled = TempestToggle::Disabled(TempestToggle::ImageDescCache);
     ImageDescCacheEntry* slot = nullptr;
     if (!disabled && matches(set[0])) {
         slot = &set[0];
@@ -2188,7 +2188,7 @@ Rasterizer::ImageDescCacheEntry& Rasterizer::CachedImageDescEntry(const AmdGpu::
     slot->last_use = ++desc_use_counter;
     auto& entry = *slot;
     if (entry.flags != flags || entry.sharp != key ||
-        ResogunToggle::Disabled(ResogunToggle::ImageDescCache)) {
+        TempestToggle::Disabled(TempestToggle::ImageDescCache)) {
         entry.desc = VideoCore::TextureCache::ImageDesc{sharp, res};
         entry.sharp = key;
         entry.flags = flags;
@@ -2265,11 +2265,11 @@ void Rasterizer::BindTextures(const Shader::Info& stage, const PreparedStage* pr
             prepared ? CachedImageDescEntry(tsharp, image_desc, prepared->image_hashes[image_index])
                      : CachedImageDescEntry(tsharp, image_desc);
         for (auto i = 0; i < num_bindings; i++) {
-            // resogun: a plain binding (no mip override) of the same T# resolves to the same image
+            // tempest: a plain binding (no mip override) of the same T# resolves to the same image
             // while no image was registered or unregistered.
             if (mip_fallback_mode == Shader::MipStorageFallbackMode::None &&
                 desc_entry.found_generation == texture_cache.RegistryGeneration() &&
-                !ResogunToggle::Disabled(ResogunToggle::TextureBindingMemo)) {
+                !TempestToggle::Disabled(TempestToggle::TextureBindingMemo)) {
                 desc_entry.pinned = bind_epoch;
                 auto& [image_id, _] =
                     image_bindings.emplace_back(desc_entry.found_id, &desc_entry.found_desc);
@@ -2476,7 +2476,7 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
                                      u32 first_image_idx, bool& barrier, TextureSet*& slot) {
     const u32 count = static_cast<u32>(stage.images.size());
     if (!prepared || count == 0 || count > TextureSet::MaxImages ||
-        ResogunToggle::Disabled(ResogunToggle::TextureSetMemo) || FrameCapture::Active()) {
+        TempestToggle::Disabled(TempestToggle::TextureSetMemo) || FrameCapture::Active()) {
         return false;
     }
     for (const auto& image : stage.images) {
@@ -2544,9 +2544,9 @@ bool Rasterizer::BindTexturesFromSet(const Shader::Info& stage, const PreparedSt
 }
 
 RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
-    // resogun: RenderStateMemo (see BeginMemo).
-    const bool memo_on = !ResogunToggle::Disabled(ResogunToggle::RenderStateMemo) && !FrameCapture::Active();
-    if (ResogunStats::enabled && ((begin_memo_hits + begin_memo_misses) & 0x3FFFF) == 0x3FFFF) {
+    // tempest: RenderStateMemo (see BeginMemo).
+    const bool memo_on = !TempestToggle::Disabled(TempestToggle::RenderStateMemo) && !FrameCapture::Active();
+    if (TempestStats::enabled && ((begin_memo_hits + begin_memo_misses) & 0x3FFFF) == 0x3FFFF) {
         std::printf("Render state memo: %llu hits, %llu misses; texture sets: %llu hits, %llu "
                     "misses\n",
                     static_cast<unsigned long long>(begin_memo_hits),
@@ -2599,7 +2599,7 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
 
 RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
     attachment_feedback_loop = false;
-    // resogun: frame analyzer census of this pass (sample counts and path, stencil, clears).
+    // tempest: frame analyzer census of this pass (sample counts and path, stencil, clears).
     const bool census_on = FrameCapture::Active();
     PassCensus::State census;
     const auto& regs = Regs();
@@ -2774,9 +2774,9 @@ RenderState Rasterizer::BeginRenderingFull(const GraphicsPipeline* pipeline) {
             }
         }
     }
-    // resogun: RESOGUN_TARGET_SIZES=1 logs each render-pass size the game draws at, once, with
+    // tempest: TEMPEST_TARGET_SIZES=1 logs each render-pass size the game draws at, once, with
     // its colour and depth attachments: what a game renders its scene at, against the video out.
-    static const bool log_sizes = std::getenv("RESOGUN_TARGET_SIZES") != nullptr;
+    static const bool log_sizes = std::getenv("TEMPEST_TARGET_SIZES") != nullptr;
     if (log_sizes) {
         static std::mutex sizes_mutex;
         static std::set<u64> sizes_seen;
@@ -2852,7 +2852,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         if (is_gds) {
             return {buffer_cache.GetGdsBuffer(), address};
         }
-        ResogunStats::gpu_write_tag = ResogunStats::WriterFill;
+        TempestStats::gpu_write_tag = TempestStats::WriterFill;
         return buffer_cache.ObtainBuffer(address, num_bytes, true);
     }();
     runtime.FillBuffer(buffer, offset, num_bytes, value);
@@ -2880,7 +2880,7 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         if (dst_gds) {
             return {gds_buffer, dst};
         }
-        ResogunStats::gpu_write_tag = ResogunStats::WriterDma;
+        TempestStats::gpu_write_tag = TempestStats::WriterDma;
         return buffer_cache.ObtainBuffer(dst, num_bytes, true, true);
     }();
     const vk::BufferCopy copy = {
@@ -3124,7 +3124,7 @@ void Rasterizer::UpdateViewportScissorState() const {
 vk::Pipeline Rasterizer::SquarePass(const GraphicsPipeline& pipeline) const {
     const vk::Pipeline square = pipeline.SquarePassHandle();
     static const bool enabled = [] {
-        const char* env = std::getenv("RESOGUN_SQUARE_PASS");
+        const char* env = std::getenv("TEMPEST_SQUARE_PASS");
         return !env || env[0] != '0';
     }();
     if (!square || !enabled) [[likely]] {
@@ -3383,7 +3383,7 @@ bool Rasterizer::DrawsFreshTarget() {
     constexpr u64 ForgetFrames = 600; // entries pruned once unused this long
     constexpr size_t PruneAbove = 64;
     const auto& regs = Regs();
-    const u64 frame = ResogunStats::gpu_frames.load(std::memory_order_relaxed);
+    const u64 frame = TempestStats::gpu_frames.load(std::memory_order_relaxed);
     bool fresh = false;
     // Every draw in the first frame of a target's (re)use is fresh, not only the first one.
     const auto note = [&](VAddr address, u32 extent) {
@@ -3423,11 +3423,11 @@ void Rasterizer::NoteFrameStart() {
     if (auto* profiler = GpuProfiler::Get()) {
         profiler->BeginFrame();
     }
-    const u64 frame = ResogunStats::gpu_frames.fetch_add(1, std::memory_order_relaxed) + 1;
-    // RESOGUN_BUFFER_STATS=1: how many earlier frames the GPU has not finished when the GPU thread
+    const u64 frame = TempestStats::gpu_frames.fetch_add(1, std::memory_order_relaxed) + 1;
+    // TEMPEST_BUFFER_STATS=1: how many earlier frames the GPU has not finished when the GPU thread
     // starts a frame — the lag that decides whether guest memory can be read in place.
     static const bool stats = [] {
-        const char* value = std::getenv("RESOGUN_BUFFER_STATS");
+        const char* value = std::getenv("TEMPEST_BUFFER_STATS");
         return value && value[0] == '1';
     }();
     if (!stats) {

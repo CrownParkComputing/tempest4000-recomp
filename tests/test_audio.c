@@ -9,14 +9,14 @@
 
 #include "../src/runtime_audio.c"
 
-void resogun_gpu_wait_while_paused(void) {}
+void tempest_gpu_wait_while_paused(void) {}
 
 uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *name) {
     (void)table; (void)count; (void)name;
     return 0;
 }
-/* The menu's audio setting (resogun_gpu.cpp): the layout that follows the device. */
-int resogun_gpu_audio_channels(void) { return 0; }
+/* The menu's audio setting (tempest_gpu.cpp): the layout that follows the device. */
+int tempest_gpu_audio_channels(void) { return 0; }
 
 #ifdef _WIN32
 static SDL_AudioStream *mock_fail_wasapi(SDL_AudioDeviceID dev, const SDL_AudioSpec *spec, SDL_AudioStreamCallback cb, void *user) {
@@ -295,7 +295,7 @@ static void test_volume_while_feeding(void) {
     printf("Volume while feeding passed!\n");
 }
 
-/* The level a port sends, read back from its RESOGUN_AUDIO_DUMP file. */
+/* The level a port sends, read back from its TEMPEST_AUDIO_DUMP file. */
 static float dumped_level(int32_t handle, int channels) {
     float buffer[256 * 2];
     for (int i = 0; i < 256 * channels; ++i) buffer[i] = 0.5f;
@@ -315,12 +315,12 @@ static float dumped_level(int32_t handle, int channels) {
 
 static void test_pad_speaker_attenuated(void) {
     printf("Testing pad speaker attenuation...\n");
-    putenv("RESOGUN_AUDIO_DUMP=test_audio_dump");
+    putenv("TEMPEST_AUDIO_DUMP=test_audio_dump");
     /* Main ports keep the game's level; pad speaker ports (type 4) are turned down. */
     assert(dumped_level(audio_open(0, 0, 0, 256, 48000, 4), 2) == 0.5f);
     float pad = dumped_level(audio_open(0, 4, 0, 256, 48000, 3), 1);
     assert(pad > 0.5f * PAD_SPEAKER_GAIN - 1e-6f && pad < 0.5f * PAD_SPEAKER_GAIN + 1e-6f);
-    putenv("RESOGUN_AUDIO_DUMP=");
+    putenv("TEMPEST_AUDIO_DUMP=");
     printf("Pad speaker attenuation passed!\n");
 }
 

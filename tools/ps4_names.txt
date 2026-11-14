@@ -1668,7 +1668,7 @@ sceShareUtilityAdvanceSetUploadContentData
 __pthread_cleanup_push_imp
 __pthread_cleanup_pop_imp
 pthread_cancel
-# Resogun (CUSA00038): names matched against its imports from idc/ps4libdoc known_names.txt.
+# Tempest (CUSA00038): names matched against its imports from idc/ps4libdoc known_names.txt.
 _sceFiberInitializeImpl
 sceAvPlayerDisableStream
 sceAvPlayerGetVideoData

@@ -5,7 +5,7 @@
 
 #include "common/assert.h"
 #include "common/types.h"
-#include "video_core/amdgpu/resogun_msaa.h"
+#include "video_core/amdgpu/tempest_msaa.h"
 #include "video_core/amdgpu/tiling.h"
 
 namespace AmdGpu {

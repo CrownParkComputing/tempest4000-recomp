@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // The system UI the PS4 draws over a game (save list, text entry, trophy and screenshot notices) and
 // the shader-cache notes, drawn with Dear ImGui by the presenter after the game frame.
-#include "resogun_overlay.h"
+#include "tempest_overlay.h"
 
 #include <algorithm>
 #include <array>
@@ -18,12 +18,12 @@
 #include <vector>
 
 #include <SDL3/SDL.h>
-#include "resogun_graphics.h"
-#include "resogun_settings.h"
+#include "tempest_graphics.h"
+#include "tempest_settings.h"
 #include "imgui.h"
 #include "imgui_internal.h" // RegisterUserTexture (save pictures)
 #include "imgui_impl_vulkan.h"
-#include "../resogun_gpu.h"
+#include "../tempest_gpu.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
@@ -31,52 +31,52 @@
 #ifdef _WIN32
 asm(".section .rdata,\"dr\"\n"
     ".balign 16\n"
-    ".global resogun_font_ttf\n"
-    "resogun_font_ttf:\n"
-    ".incbin \"" RESOGUN_FONT_PATH "\"\n"
-    ".global resogun_font_ttf_end\n"
-    "resogun_font_ttf_end:\n"
+    ".global tempest_font_ttf\n"
+    "tempest_font_ttf:\n"
+    ".incbin \"" TEMPEST_FONT_PATH "\"\n"
+    ".global tempest_font_ttf_end\n"
+    "tempest_font_ttf_end:\n"
     ".text\n");
 #else
 asm(".section .rodata\n"
     ".balign 16\n"
-    ".hidden resogun_font_ttf\n"
-    ".global resogun_font_ttf\n"
-    "resogun_font_ttf:\n"
-    ".incbin \"" RESOGUN_FONT_PATH "\"\n"
-    ".hidden resogun_font_ttf_end\n"
-    ".global resogun_font_ttf_end\n"
-    "resogun_font_ttf_end:\n"
+    ".hidden tempest_font_ttf\n"
+    ".global tempest_font_ttf\n"
+    "tempest_font_ttf:\n"
+    ".incbin \"" TEMPEST_FONT_PATH "\"\n"
+    ".hidden tempest_font_ttf_end\n"
+    ".global tempest_font_ttf_end\n"
+    "tempest_font_ttf_end:\n"
     ".previous\n");
 #endif
-extern "C" const unsigned char resogun_font_ttf[];
-extern "C" const unsigned char resogun_font_ttf_end[];
+extern "C" const unsigned char tempest_font_ttf[];
+extern "C" const unsigned char tempest_font_ttf_end[];
 
 #ifdef _WIN32
 asm(".section .rdata,\"dr\"\n"
     ".balign 16\n"
-    ".global resogun_exit_font_ttf\n"
-    "resogun_exit_font_ttf:\n"
-    ".incbin \"" RESOGUN_EXIT_FONT_PATH "\"\n"
-    ".global resogun_exit_font_ttf_end\n"
-    "resogun_exit_font_ttf_end:\n"
+    ".global tempest_exit_font_ttf\n"
+    "tempest_exit_font_ttf:\n"
+    ".incbin \"" TEMPEST_EXIT_FONT_PATH "\"\n"
+    ".global tempest_exit_font_ttf_end\n"
+    "tempest_exit_font_ttf_end:\n"
     ".text\n");
 #else
 asm(".section .rodata\n"
     ".balign 16\n"
-    ".hidden resogun_exit_font_ttf\n"
-    ".global resogun_exit_font_ttf\n"
-    "resogun_exit_font_ttf:\n"
-    ".incbin \"" RESOGUN_EXIT_FONT_PATH "\"\n"
-    ".hidden resogun_exit_font_ttf_end\n"
-    ".global resogun_exit_font_ttf_end\n"
-    "resogun_exit_font_ttf_end:\n"
+    ".hidden tempest_exit_font_ttf\n"
+    ".global tempest_exit_font_ttf\n"
+    "tempest_exit_font_ttf:\n"
+    ".incbin \"" TEMPEST_EXIT_FONT_PATH "\"\n"
+    ".hidden tempest_exit_font_ttf_end\n"
+    ".global tempest_exit_font_ttf_end\n"
+    "tempest_exit_font_ttf_end:\n"
     ".previous\n");
 #endif
-extern "C" const unsigned char resogun_exit_font_ttf[];
-extern "C" const unsigned char resogun_exit_font_ttf_end[];
+extern "C" const unsigned char tempest_exit_font_ttf[];
+extern "C" const unsigned char tempest_exit_font_ttf_end[];
 
-namespace ResogunOverlay {
+namespace TempestOverlay {
 
 namespace {
 
@@ -116,20 +116,20 @@ int choice_index = 0;
 std::atomic<int> choice_result{-1}; // -1 open, -2 cancelled, else the chosen index
 // Save pictures: decoded by BeginChoice, made textures on the present thread (null = none).
 // Closed lists' textures wait in choice_retired until the backend has destroyed them.
-std::vector<ResogunPng::Image> choice_pictures;
+std::vector<TempestPng::Image> choice_pictures;
 std::vector<ImTextureData*> choice_textures, choice_retired;
 std::atomic<bool> choice_retiring{false};
 // The start-up picture (SetSplash): decoded at start, made a texture on the present thread (both
 // guarded by imgui_mutex), retired through choice_retired once faded out.
 enum SplashState : int { SplashNone, SplashShown, SplashFading, SplashDone };
 constexpr s64 kSplashFadeMs = 400, kSplashMaxMs = 60000;
-ResogunPng::Image splash_picture;
+TempestPng::Image splash_picture;
 ImTextureData* splash_texture = nullptr;
 std::atomic<int> splash_state{SplashNone}, splash_lit_frames{0};
 std::atomic<s64> splash_since{0}, splash_fade_from{0};
 std::chrono::steady_clock::time_point last_present{};
 // The Display Settings panel (F10, or Select held for 2 s: src/runtime_pad.c). The row and
-// dirty flag are guarded by imgui_mutex; the values live in ResogunSettings.
+// dirty flag are guarded by imgui_mutex; the values live in TempestSettings.
 std::atomic<bool> display_open{false};
 
 int display_row = 0;
@@ -317,20 +317,20 @@ void ChoiceBox() {
 
 template <typename T, std::size_t N>
 int StepValue(const std::array<T, N>& values, int current, int delta) {
-    const int i = ResogunGraphics::IndexOf(values, current, 0);
+    const int i = TempestGraphics::IndexOf(values, current, 0);
     return values[(i + delta + int(N)) % int(N)];
 }
 
 // imgui_mutex held: the resolution the panel shows, the one being chosen or the window's.
 std::pair<int, int> ShownResolution() {
-    const auto& s = ResogunSettings::Get();
+    const auto& s = TempestSettings::Get();
     return pending_resolution.first ? pending_resolution
                                     : std::pair<int, int>{s.window_width.load(), s.window_height.load()};
 }
 
 // imgui_mutex held: the aspect ratio the panel shows, the one being chosen or the setting.
 int ShownAspect() {
-    return pending_aspect >= 0 ? pending_aspect : ResogunSettings::Get().aspect_ratio.load();
+    return pending_aspect >= 0 ? pending_aspect : TempestSettings::Get().aspect_ratio.load();
 }
 
 // imgui_mutex held: hands the chosen aspect ratio and window size to the window (which follows
@@ -341,7 +341,7 @@ void SettleResolution(bool now) {
         (!now && std::chrono::steady_clock::now() - pending_since < kResolutionSettle)) {
         return;
     }
-    auto& s = ResogunSettings::Get();
+    auto& s = TempestSettings::Get();
     if (pending_resolution.first) {
         s.window_width = pending_resolution.first;
         s.window_height = pending_resolution.second;
@@ -353,23 +353,23 @@ void SettleResolution(bool now) {
 
 // imgui_mutex held: the size the fullscreen modes show for the panel's aspect ratio.
 std::pair<int, int> ShownFullscreen() {
-    const auto& s = ResogunSettings::Get();
+    const auto& s = TempestSettings::Get();
     if (pending_aspect < 0 && s.fullscreen_width > 0) return {s.fullscreen_width.load(), s.fullscreen_height.load()};
-    return ResogunSettings::PickFullscreen(s.display_mode == ResogunGraphics::Fullscreen, ShownAspect(),
+    return TempestSettings::PickFullscreen(s.display_mode == TempestGraphics::Fullscreen, ShownAspect(),
                                            {s.desktop_width, s.desktop_height}, s.modes)
         .picture;
 }
 
 // imgui_mutex held: the focused row's value one step forward (delta 1) or back (-1).
 void ChangeDisplayRow(int row, int delta) {
-    namespace G = ResogunGraphics;
-    auto& s = ResogunSettings::Get();
+    namespace G = TempestGraphics;
+    auto& s = TempestSettings::Get();
     switch (row) {
     case RowMode: s.display_mode = (s.display_mode + delta + G::DisplayModeCount) % G::DisplayModeCount; break;
     case RowAspect: { // the window moves to the new shape's size nearest in height
-        const int next = (ShownAspect() + delta + ResogunSettings::AspectRatioCount) % ResogunSettings::AspectRatioCount;
+        const int next = (ShownAspect() + delta + TempestSettings::AspectRatioCount) % TempestSettings::AspectRatioCount;
         pending_aspect = next;
-        pending_resolution = ResogunSettings::NearestHeight(s.resolutions[next], ShownResolution().second);
+        pending_resolution = TempestSettings::NearestHeight(s.resolutions[next], ShownResolution().second);
         pending_since = std::chrono::steady_clock::now();
         break;
     }
@@ -403,8 +403,8 @@ void ChangeDisplayRow(int row, int delta) {
     }
     case RowFps: s.frame_rate = StepValue(G::FrameRates, s.frame_rate.load(), delta); break;
     case RowRender:
-        s.render_resolution = s.render_resolution == ResogunSettings::Render4k ? ResogunSettings::Render1080p
-                                                                                   : ResogunSettings::Render4k;
+        s.render_resolution = s.render_resolution == TempestSettings::Render4k ? TempestSettings::Render1080p
+                                                                                   : TempestSettings::Render4k;
         break;
     case RowSharpen: s.sharpening = !s.sharpening; break;
     case RowHdr: s.hdr = !s.hdr; break;
@@ -419,7 +419,7 @@ void CloseDisplaySettings() {
     display_open = false;
     if (display_dirty) {
         display_dirty = false;
-        ResogunSettings::SaveDisplay();
+        TempestSettings::SaveDisplay();
     }
 }
 
@@ -432,12 +432,12 @@ struct DisplayRowText {
 };
 
 DisplayRowText DisplayRowAt(int row) {
-    auto& s = ResogunSettings::Get();
+    auto& s = TempestSettings::Get();
     switch (row) {
     case RowMode: {
         static const char* const names[] = {"Windowed", "Borderless windowed", "Fullscreen"};
         std::string help = "Windowed, a borderless window covering the screen, or exclusive fullscreen.";
-        if (s.display_mode != ResogunGraphics::Windowed) {
+        if (s.display_mode != TempestGraphics::Windowed) {
             const auto [fw, fh] = ShownFullscreen();
             help += " Fullscreen picks its size from the screen and the aspect ratio, now " + std::to_string(fw) +
                     " x " + std::to_string(fh) + ", with black bars when the screen is of another shape.";
@@ -446,8 +446,8 @@ DisplayRowText DisplayRowAt(int row) {
     }
     case RowAspect: {
         const int ratio = ShownAspect();
-        std::string text(ResogunSettings::AspectRatioKeys[ratio]);
-        if (ratio == ResogunSettings::Aspect16x9) text += "  (PS4)";
+        std::string text(TempestSettings::AspectRatioKeys[ratio]);
+        if (ratio == TempestSettings::Aspect16x9) text += "  (PS4)";
         if (ratio != s.startup_aspect_ratio) text += "  (after restart)";
         return {"Aspect ratio", text,
                 "The picture's shape. 21:9 and 32:9 show more of the level to the sides, for ultrawide screens, "
@@ -457,8 +457,8 @@ DisplayRowText DisplayRowAt(int row) {
     }
     case RowResolution: {
         const auto [w, h] = ShownResolution();
-        const bool windowed = s.display_mode == ResogunGraphics::Windowed;
-        return {"Windowed resolution", std::to_string(w) + " x " + std::to_string(h) + "  " + ResogunSettings::AspectLabel(w, h),
+        const bool windowed = s.display_mode == TempestGraphics::Windowed;
+        return {"Windowed resolution", std::to_string(w) + " x " + std::to_string(h) + "  " + TempestSettings::AspectLabel(w, h),
                 "The window's size, among those of the aspect ratio that fit the screen.", windowed, windowed};
     }
     case RowMonitor: {
@@ -474,12 +474,12 @@ DisplayRowText DisplayRowAt(int row) {
                 "at each refresh, still without tearing. Off, tearing allowed shows each frame at once: the "
                 "least delay, and the only way past twice the refresh rate."};
     case RowFps: {
-        const int chosen = s.frame_rate.load(), runs = ResogunSettings::EffectiveFrameRate();
+        const int chosen = s.frame_rate.load(), runs = TempestSettings::EffectiveFrameRate();
         std::string value = std::to_string(chosen) + " FPS";
-        if (const char* env = std::getenv("RESOGUN_VBLANK_HZ"); env && env[0]) {
-            value += "  (RESOGUN_VBLANK_HZ overrides)";
+        if (const char* env = std::getenv("TEMPEST_VBLANK_HZ"); env && env[0]) {
+            value += "  (TEMPEST_VBLANK_HZ overrides)";
         } else if (runs != chosen) {
-            value += "  (display is " + std::to_string(int(ResogunSettings::DisplayRefresh() + 0.5)) +
+            value += "  (display is " + std::to_string(int(TempestSettings::DisplayRefresh() + 0.5)) +
                      " Hz: runs at " + std::to_string(runs) + ")";
         }
         return {"Max FPS", value,
@@ -490,7 +490,7 @@ DisplayRowText DisplayRowAt(int row) {
     }
     case RowRender: {
         const int value = s.render_resolution;
-        std::string text = value == ResogunSettings::Render4k ? "4K (3840 x 2160)" : "1080p";
+        std::string text = value == TempestSettings::Render4k ? "4K (3840 x 2160)" : "1080p";
         if (value != s.startup_render_resolution) text += "  (after restart)";
         return {"Render resolution", text,
                 "4K as on PS4 Pro, filtered down to the window: sharper. 1080p as on PS4: lighter on the GPU. "
@@ -659,7 +659,7 @@ void ExitPromptBox() {
     dl->AddRectFilled(ImVec2(x0, top), ImVec2(x1, top + panel_h), PageInk::Panel);
     dl->AddRect(ImVec2(x0, top), ImVec2(x1, top + panel_h), PageInk::Frame, 0.0f, 0, line);
 
-    const char* title = "EXIT RESOGUN?";
+    const char* title = "EXIT TEMPEST?";
     const float title_size = 46.0f * px, title_w = font->CalcTextSizeA(title_size, FLT_MAX, 0.0f, title).x;
     const float tab_w = title_w + 120.0f * px, tab_h = 62.0f * px, tab_x = o.x + (size.x - tab_w) * 0.5f;
     const ImVec2 tab_a(tab_x, top - tab_h + 8.0f * px), tab_b(tab_x + tab_w, top + 8.0f * px);
@@ -850,9 +850,9 @@ void Notice(float& bottom) {
     CornerNote("##notice", bottom, 0.6f, [&] { ImGui::TextUnformatted(text.c_str()); });
 }
 
-// RESOGUN_SHADER_NOTES=1: shader cache and compile notes in the corner.
+// TEMPEST_SHADER_NOTES=1: shader cache and compile notes in the corner.
 const bool shader_notes = [] {
-    const char* env = std::getenv("RESOGUN_SHADER_NOTES");
+    const char* env = std::getenv("TEMPEST_SHADER_NOTES");
     return env && *env != '0';
 }();
 
@@ -895,7 +895,7 @@ void ShaderCompiles(float& bottom) {
 void ConfigureContext() {
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr; // window positions are not kept
-    io.BackendPlatformName = "resogun";
+    io.BackendPlatformName = "tempest";
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 10.0f;
@@ -915,11 +915,11 @@ void ConfigureContext() {
     c[ImGuiCol_PlotHistogram] = Ink::Accent;
     ImFontConfig font_config;
     font_config.FontDataOwnedByAtlas = false;
-    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(resogun_font_ttf),
-                                   int(resogun_font_ttf_end - resogun_font_ttf), 18.0f, &font_config);
+    io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(tempest_font_ttf),
+                                   int(tempest_font_ttf_end - tempest_font_ttf), 18.0f, &font_config);
     exit_font = io.Fonts->AddFontFromMemoryTTF(
-        const_cast<unsigned char*>(resogun_exit_font_ttf),
-        int(resogun_exit_font_ttf_end - resogun_exit_font_ttf), 18.0f, &font_config);
+        const_cast<unsigned char*>(tempest_exit_font_ttf),
+        int(tempest_exit_font_ttf_end - tempest_exit_font_ttf), 18.0f, &font_config);
 }
 
 // imgui_mutex held. The backend frees a texture some frames after its last use.
@@ -940,7 +940,7 @@ void UpdateChoiceTextures() {
     if (!choice_pictures.empty()) {
         choice_textures.assign(choice_pictures.size(), nullptr);
         for (size_t i = 0; i < choice_pictures.size(); ++i) {
-            const ResogunPng::Image& picture = choice_pictures[i];
+            const TempestPng::Image& picture = choice_pictures[i];
             if (picture.rgba.empty()) {
                 continue;
             }
@@ -1146,17 +1146,17 @@ bool HandleEvent(const SDL_Event& event) {
         return true;
     }
     // F9 turns sharpening on or off over the game itself, to compare (saved at once). Left to the
-    // pad recorder when RESOGUN_PAD_RECORD is set (src/runtime_pad.c), which starts on F9.
+    // pad recorder when TEMPEST_PAD_RECORD is set (src/runtime_pad.c), which starts on F9.
     static const bool pad_record = [] {
-        const char* record = std::getenv("RESOGUN_PAD_RECORD");
+        const char* record = std::getenv("TEMPEST_PAD_RECORD");
         return record && record[0];
     }();
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F9 && !event.key.repeat && !text_entry_active &&
         !pad_record) {
-        auto& s = ResogunSettings::Get();
+        auto& s = TempestSettings::Get();
         s.sharpening = !s.sharpening;
         ShowNotice(s.sharpening ? "Sharpening: On" : "Sharpening: Off", 1500);
-        ResogunSettings::SaveDisplay();
+        TempestSettings::SaveDisplay();
         return true;
     }
     // F4 asks to close the game anywhere; Alt+F4 still closes the window at once.
@@ -1228,7 +1228,7 @@ void SetLoading(bool active, u32 done, u32 total) {
     loading = active;
 }
 
-void SetSplash(ResogunPng::Image picture) {
+void SetSplash(TempestPng::Image picture) {
     std::scoped_lock lock{imgui_mutex};
     if (picture.rgba.empty() || splash_state != SplashNone) {
         return;
@@ -1263,8 +1263,8 @@ bool CapturesInput() {
 }
 
 void BeginChoice(const std::string& title, const std::vector<std::string>& items,
-                 std::vector<ResogunPng::Image> pictures, int focus, const std::string& preview_label,
-                 ResogunPng::Image preview) {
+                 std::vector<TempestPng::Image> pictures, int focus, const std::string& preview_label,
+                 TempestPng::Image preview) {
     std::scoped_lock lock{imgui_mutex};
     RetireChoiceTextures();
     choice_pictures = std::move(pictures);
@@ -1336,24 +1336,24 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     cmdbuf.endRendering();
 }
 
-} // namespace ResogunOverlay
+} // namespace TempestOverlay
 
 // A message from the runtime to the player (src/runtime_pad.c: where the Display Settings are).
-extern "C" void resogun_gpu_notice(const char* text, int milliseconds) {
+extern "C" void tempest_gpu_notice(const char* text, int milliseconds) {
     if (text && text[0]) {
-        ResogunOverlay::ShowNotice(text, milliseconds);
+        TempestOverlay::ShowNotice(text, milliseconds);
     }
 }
 
 // Called by the runtime (src/runtime_services.c) when the game unlocks a trophy: its name as a
 // notice in the corner.
-extern "C" void resogun_gpu_toast_trophy(int id, const char* title, const char* detail, const unsigned char* png,
+extern "C" void tempest_gpu_toast_trophy(int id, const char* title, const char* detail, const unsigned char* png,
                                             uint64_t png_size) {
     (void)id;
     (void)detail;
     (void)png;
     (void)png_size;
     if (title && title[0]) {
-        ResogunOverlay::ShowNotice(std::string("Trophy: ") + title, 5000);
+        TempestOverlay::ShowNotice(std::string("Trophy: ") + title, 5000);
     }
 }

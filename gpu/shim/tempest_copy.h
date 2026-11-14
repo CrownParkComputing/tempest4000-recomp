@@ -1,10 +1,10 @@
-// resogun: parallel copies of guest memory. Streaming a new area uploads 50-400 MB of textures
+// tempest: parallel copies of guest memory. Streaming a new area uploads 50-400 MB of textures
 // and buffers per frame; copied on one thread that is tens of milliseconds (stutter).
 #pragma once
 #include <cstddef>
 #include <functional>
 
-namespace ResogunCopy {
+namespace TempestCopy {
 
 /// Runs `task(i)` for every i in [0, count) on the copy threads and the caller; returns when
 /// all are done. Runs inline when count is 1, the pool is disabled, or when called from a copy
@@ -45,4 +45,4 @@ void AfterCopies(std::function<void()> callback);
 /// Times a thread yielded while waiting for copies (diagnostics).
 unsigned long long Yields();
 
-} // namespace ResogunCopy
+} // namespace TempestCopy

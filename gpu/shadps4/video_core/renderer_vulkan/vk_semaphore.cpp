@@ -62,7 +62,7 @@ void Semaphore::Wait(u64 tick) {
         .pValues = &tick,
     };
 
-    // resogun: only a timeout waits again. A lost device (the driver reset the GPU after a hang:
+    // tempest: only a timeout waits again. A lost device (the driver reset the GPU after a hang:
     // nvlddmkm event 153) returned at once forever: the recording thread spun here, the GPU
     // thread waited for it and the game for the GPU thread, a frozen window that had to be killed.
     vk::Result result;

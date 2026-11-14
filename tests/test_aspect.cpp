@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// The aspect ratio setting (resogun_settings.h): which shape a size is, the game's width for it, and
+// The aspect ratio setting (tempest_settings.h): which shape a size is, the game's width for it, and
 // what the fullscreen modes pick from a screen.
 #include <cassert>
 #include <cstdio>
 #include <utility>
 #include <vector>
 
-#include "../gpu/shim/resogun_settings.h"
+#include "../gpu/shim/tempest_settings.h"
 
-using namespace ResogunSettings;
+using namespace TempestSettings;
 using Size = std::pair<int, int>;
 
 int main() {

@@ -6,7 +6,7 @@
  * Every entry here is an explicit contract; unknown functions still stop. */
 #define _GNU_SOURCE
 #include "runtime.h"
-#include "gpu/resogun_gpu.h"
+#include "gpu/tempest_gpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -77,7 +77,7 @@ static ABI int32_t user_event(int32_t *event) {
 }
 
 /* ---- SystemService ---- */
-static int language(void) { const char *v=getenv("RESOGUN_LANGUAGE"); return v ? atoi(v) : 1; }
+static int language(void) { const char *v=getenv("TEMPEST_LANGUAGE"); return v ? atoi(v) : 1; }
 static ABI int32_t system_param(int32_t id,int32_t *value) {
     if (!value) return SYSTEM_PARAMETER;
     switch (id) {
@@ -266,7 +266,7 @@ static int common_initialized;
 static ABI int32_t common_init(void) {
     if (common_initialized) return (int32_t)0x80B80002;
     common_initialized=1;
-    resogun_gpu_common_dialog_initialized();
+    tempest_gpu_common_dialog_initialized();
     return 0;
 }
 static int32_t dialog_init(int i) {
@@ -345,7 +345,7 @@ static struct {
 } save_dialog;
 static char save_labels[33][2700], save_icons[33][720], save_question[2800];
 static const char *save_text(const char *english, const char *portuguese) {
-    const char *ui=getenv("RESOGUN_UI_LANGUAGE");
+    const char *ui=getenv("TEMPEST_UI_LANGUAGE");
     int pt=ui && *ui ? !strncmp(ui,"pt",2) : language()==7 || language()==17;
     return pt ? portuguese : english;
 }
@@ -426,7 +426,7 @@ static void save_show_list(int focus) {
     }
     const char *title=save_dialog.type==1 ? save_text("Save game","Salvar jogo")
                       : save_dialog.type==2 ? save_text("Load game","Carregar jogo") : save_text("Delete save","Excluir save");
-    save_dialog.choosing=n && resogun_gpu_choice_begin(title,labels,icons,n,focus) ? 1 : 0;
+    save_dialog.choosing=n && tempest_gpu_choice_begin(title,labels,icons,n,focus) ? 1 : 0;
     if (!save_dialog.choosing) {
         save_dialog.result=SAVE_RESULT_CANCELED;
         dialogs[2].status=DIALOG_FINISHED; dialogs[2].button=0;
@@ -491,7 +491,7 @@ static ABI int32_t save_open(const unsigned char *p) {
 }
 static ABI int32_t save_status(void) {
     if (save_dialog.choosing) {
-        int choice=resogun_gpu_choice_poll();
+        int choice=tempest_gpu_choice_poll();
         if (choice!=-1) {
             if (save_dialog.choosing==2) {
                 if (choice!=0) { save_show_list(save_dialog.selected); return dialog_status(2); }
@@ -505,7 +505,7 @@ static ABI int32_t save_status(void) {
                          save_text("Overwrite this save?","Sobrescrever este save?"),
                          metadata);
                 const char *options[]={save_text("Overwrite","Sobrescrever"),save_text("Cancel","Cancelar")};
-                if (resogun_gpu_choice_confirm(save_question,options,2,1,save_dialog.new_icon,save_dialog.new_icon_size,
+                if (tempest_gpu_choice_confirm(save_question,options,2,1,save_dialog.new_icon,save_dialog.new_icon_size,
                                                  save_text("New save","Novo save"),save_text("Preview unavailable","Prévia indisponível"))) {
                     save_dialog.choosing=2; return dialog_status(2);
                 }
@@ -605,19 +605,19 @@ static ABI int32_t ime_init(const ImeParam *param, const void *extended) {
     char initial[512], prompt[256];
     utf16_to_utf8(param->buffer,param->max_length,initial,sizeof(initial));
     utf16_to_utf8(param->title,128,prompt,sizeof(prompt));
-    const char *preset=getenv("RESOGUN_IME_TEXT");
+    const char *preset=getenv("TEMPEST_IME_TEXT");
     if (preset) { ime_complete(0,preset); return 0; }
     /* An empty field starts with the user name: a controller alone can accept it (the port
      * has no on-screen keyboard). */
     const char *start=initial[0] ? initial : USER_NAME;
-    if (!resogun_gpu_text_input_begin(start,prompt[0] ? prompt : "Text")) ime_complete(0,start);
+    if (!tempest_gpu_text_input_begin(start,prompt[0] ? prompt : "Text")) ime_complete(0,start);
     else printf("Runtime: ImeDialog opened: shown on screen; keyboard Enter or Cross accepts, Esc or Circle cancels\n");
     return 0;
 }
 static ABI int32_t ime_status(void) {
     if (ime.running) {
         char text[512];
-        int state=resogun_gpu_text_input_poll(text,sizeof(text));
+        int state=tempest_gpu_text_input_poll(text,sizeof(text));
         if (state) ime_complete(state==1 ? 0 : 1,text);
     }
     return ime.running ? 1 : ime.finished ? 2 : 0; /* Running / Finished / None */
@@ -664,10 +664,10 @@ static ABI int32_t ime_update(void *handler) { (void)handler; return keyboard_op
 /* ---- Trophies: unlocks are kept on disk and reported back to the game ----
  * The count of trophies and their icons (TROP000.PNG, TROP001.PNG...) come from the game's
  * own sce_sys/trophy/trophy00.trp. The unlocked set is saved in <user dir>/trophies.dat
- * (user dir: RESOGUN_USER_DIR, or "user"). Names for the unlock notice come from an optional,
+ * (user dir: TEMPEST_USER_DIR, or "user"). Names for the unlock notice come from an optional,
  * hand-made <user dir>/trophy_names.txt.
  * Without the TRP (some dumps lack it) the count is still the game's 65 (ids 0-64, TROP000-064 in
- * Resogun's trophy00.trp): with a count of 0 every trophy would read as locked. */
+ * Tempest's trophy00.trp): with a count of 0 every trophy would read as locked. */
 #define TROPHY_MAX 128
 #define TROPHY_GAME_COUNT 65
 #define TROPHY_ALREADY_UNLOCKED ((int32_t)0x8055160C) /* checked by the game's unlock callback */
@@ -676,7 +676,7 @@ static uint32_t trophy_total;
 static int trophy_ready;
 
 static const char *trophy_dir(void) {
-    const char *dir=getenv("RESOGUN_USER_DIR");
+    const char *dir=getenv("TEMPEST_USER_DIR");
     if (dir && dir[0]) return dir;
     const char *rf=runtime_file_user_dir();
     if (rf && rf[0]) return rf;
@@ -832,7 +832,7 @@ static void trophy_notify(int32_t id) {
     snprintf(detail,sizeof(detail),"%s",trophy_details[id]);
     int has_icon=trophy_icon(id,&png,&png_size);
     pthread_mutex_unlock(&lock);
-    resogun_gpu_toast_trophy(id,notice,detail,has_icon ? png : 0,has_icon ? png_size : 0);
+    tempest_gpu_toast_trophy(id,notice,detail,has_icon ? png : 0,has_icon ? png_size : 0);
 }
 /* On a PlayStation the system grants the platinum (id 0) with the last trophy: 1 when every other
  * trophy of the package is unlocked and this call just unlocked the platinum. Lock held. */

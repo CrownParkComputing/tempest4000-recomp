@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "resogun_copy.h"
+#include "tempest_copy.h"
 
 #include <atomic>
 #include <deque>
@@ -43,7 +43,7 @@ class PageManager;
 
 class BufferCache {
     static constexpr u64 ADDRESS_SPACE_BITS = 40;
-    // resogun: arena pages are 4 GiB unless the driver's buffer size limit is lower (AMD's
+    // tempest: arena pages are 4 GiB unless the driver's buffer size limit is lower (AMD's
     // Windows driver: 2 GiB); an arena spans up to two pages, so they shrink to half the limit.
     static constexpr u64 MAX_ARENA_PAGE_BITS = 32;
     static constexpr u64 MIN_ARENA_PAGE_BITS = 30;
@@ -51,7 +51,7 @@ class BufferCache {
     static constexpr u64 MIN_BLOCK_SIZE = 16_KB;
 
 public:
-    /// Read-only bindings up to this size are copied into a stream buffer (resogun: public for
+    /// Read-only bindings up to this size are copied into a stream buffer (tempest: public for
     /// the draw pipeline's constant ring).
     static constexpr u64 STREAM_THRESHOLD = 16_KB;
 
@@ -88,10 +88,10 @@ public:
     /// Invalidates any buffer in the logical page range.
     void InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks = false);
 
-    /// resogun: the guest unmapped [device_addr, +size): drops what TryMergeWrite saved there.
+    /// tempest: the guest unmapped [device_addr, +size): drops what TryMergeWrite saved there.
     void ForgetMergedWrites(VAddr device_addr, u64 size);
 
-    /// resogun: a guest write fault at `device_addr` was handled; unprotect its neighbourhood.
+    /// tempest: a guest write fault at `device_addr` was handled; unprotect its neighbourhood.
     void ExtendWriteFault(VAddr device_addr);
 
     /// Flushes any GPU modified buffer in the logical page range back to CPU memory.
@@ -114,7 +114,7 @@ public:
     /// Processes the fault buffer.
     void ProcessFaultBuffer();
 
-    /// resogun: diagnostics. Uploads every page the GPU did not write again when bound.
+    /// tempest: diagnostics. Uploads every page the GPU did not write again when bound.
     void MarkUnwrittenCpuModified();
 
     /// Synchronizes all buffers needed for DMA.
@@ -146,19 +146,19 @@ private:
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);
 
-    /// resogun: a CPU write fault at [device_addr, +size) on a page holding GPU-written bytes
+    /// tempest: a CPU write fault at [device_addr, +size) on a page holding GPU-written bytes
     /// it does not touch: saves those bytes as the guest has them and lets the write go ahead
     /// without downloading (true), so the GPU's copy stays the newer one. false: download.
     bool TryMergeWrite(VAddr device_addr, u64 size);
 
-    /// resogun: passes the CPU-modified range [addr, +size) to emit(addr, size) for upload,
+    /// tempest: passes the CPU-modified range [addr, +size) to emit(addr, size) for upload,
     /// minus the GPU-written bytes TryMergeWrite saved that the guest has not changed since.
     template <typename Emit>
     void EmitUploadRange(VAddr addr, u64 size, Emit&& emit);
 
-    /// resogun: batched small copies on the copy threads (ResogunCopy::QueueCopy).
-    static void RunGuestCopy(const ResogunCopy::Item& item);
-    void SmallGuestCopy(const ResogunCopy::Item& item);
+    /// tempest: batched small copies on the copy threads (TempestCopy::QueueCopy).
+    static void RunGuestCopy(const TempestCopy::Item& item);
+    void SmallGuestCopy(const TempestCopy::Item& item);
 
     const Buffer* UploadCopies(const Buffer* arena, std::span<vk::BufferCopy> copies,
                                size_t total_size_bytes);
@@ -167,7 +167,7 @@ private:
 
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
-    // resogun: texel buffer ranges known not to alias an image, per image registry generation.
+    // tempest: texel buffer ranges known not to alias an image, per image registry generation.
     struct ImageMiss {
         VAddr address = 0;
         u32 size = 0;
@@ -185,11 +185,11 @@ private:
     Buffer gds_buffer;
     RangeSet gpu_modified_ranges;
 
-    /// resogun: writes downloaded GPU bytes to the guest, minus the bytes of merged ranges
+    /// tempest: writes downloaded GPU bytes to the guest, minus the bytes of merged ranges
     /// the guest changed after TryMergeWrite (its copy is the newer one there).
     void WriteDownload(VAddr device_addr, const u8* data, u64 size);
 
-    /// resogun: pages TryMergeWrite left without a download, by page address: each GPU-written
+    /// tempest: pages TryMergeWrite left without a download, by page address: each GPU-written
     /// range on the page with the bytes the guest held there at the fault.
     std::mutex merged_mutex;
     std::map<VAddr, std::vector<MergedRange>> merged_pages;

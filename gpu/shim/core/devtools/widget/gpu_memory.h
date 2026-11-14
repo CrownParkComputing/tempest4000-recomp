@@ -1,4 +1,4 @@
-// resogun: devtools GPU memory viewer is not part of the port.
+// tempest: devtools GPU memory viewer is not part of the port.
 #pragma once
 #include <string>
 #include <vector>

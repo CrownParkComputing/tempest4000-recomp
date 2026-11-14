@@ -33,7 +33,7 @@ std::string_view BufferTypeName(MemoryType type) {
     }
 }
 
-/// resogun: where the stream buffer lives (RESOGUN_STREAM_MEMORY). Every draw copies its small
+/// tempest: where the stream buffer lives (TEMPEST_STREAM_MEMORY). Every draw copies its small
 /// read-only buffers from guest memory into it on the Vulkan recording thread. "device"
 /// (shadPS4's choice) is VRAM written through the PCIe BAR: cheap with AMD Smart Access Memory
 /// on a desktop, but on a laptop NVIDIA GPU these writes took half of that thread's time and
@@ -42,7 +42,7 @@ std::string_view BufferTypeName(MemoryType type) {
 enum class StreamPlacement { Device, Host, Cached };
 static StreamPlacement StreamMemory() {
     static const StreamPlacement placement = [] {
-        const char* env = std::getenv("RESOGUN_STREAM_MEMORY");
+        const char* env = std::getenv("TEMPEST_STREAM_MEMORY");
         const std::string_view value = env ? env : "cached";
         if (value == "device") {
             return StreamPlacement::Device;

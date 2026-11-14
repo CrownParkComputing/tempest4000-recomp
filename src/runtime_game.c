@@ -10,7 +10,7 @@
 #ifndef _WIN32
 #include <sys/mman.h>
 #endif
-#include "gpu/resogun_gpu.h"
+#include "gpu/tempest_gpu.h"
 
 /* The string value of "key" in analysis.json's head (it is written first), at most size-1 chars of
  * [0-9a-z.]; 0 when absent. */
@@ -51,7 +51,7 @@ void runtime_game_identify(const char *title_id, const char *app_version, const 
  * engine_set_fps script command's) also sets the step 1/fps. The game sets 59.94 at boot, runs one
  * update per frame without frame skip, and waits for one vblank a frame; the vblank follows
  * frame_rate (emulator_settings.h), so the target becomes frame_rate*0.999 like the game's 59.94.
- * resogun_frame_rate() is the rate the window's display can show (ResogunSettings::
+ * tempest_frame_rate() is the rate the window's display can show (TempestSettings::
  * EffectiveFrameRate). Called on the game's thread at each flip, it also restores the rate after
  * the game resets it. */
 static unsigned char *game_image;
@@ -64,11 +64,11 @@ void runtime_game_frame_rate(void) {
     void **vtable=*(void ***)clock;
     if ((unsigned char *)vtable!=game_image+0xc6c2c8) {
         clock_unknown=1;
-        resogun_set_frame_rate(60); /* the vblank back to the game's own rate */
+        tempest_set_frame_rate(60); /* the vblank back to the game's own rate */
         puts("Frame rate: the engine's frame clock is not where eboot 01.10 has it; frame_rate stays 60");
         return;
     }
-    const int rate=resogun_frame_rate();
+    const int rate=tempest_frame_rate();
     const float want=(float)rate*0.999f;
     if (fabsf(clock[2]-want)<0.001f) return;
     typedef void (ABI *SetFps)(void *clock, float fps);
@@ -78,7 +78,7 @@ void runtime_game_frame_rate(void) {
 
 /* A 4:3, 16:10, 21:9 or 32:9 output (eboot 01.10). The engine sizes its display buffers from a
  * table at 0xa5d120 (1920x1080 on PS4, 3840x2160 on PS4 Pro) and takes its aspect ratio from the
- * video out's size (emulator_settings.h, resogun_width_4k).
+ * video out's size (emulator_settings.h, tempest_width_4k).
  * Its render scripts create the scene targets with fixed sizes (mrt_albedo 1920x1080 or 1920x2160
  * checkerboard, SSAO at half, menu_overlay for the pause menu...) through 0x476aa0 (render targets:
  * this, name, format, width, height, options) and 0x478840 and 0x478910 (depth buffers: this,

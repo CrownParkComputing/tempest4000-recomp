@@ -81,7 +81,7 @@ bool AvPlayerSource::Init(const AvPlayerInitData& init_data, std::string_view pa
             return false;
         }
     } else {
-        // resogun: guest paths are translated by the port's file system (runtime_file.c).
+        // tempest: guest paths are translated by the port's file system (runtime_file.c).
         char host[1024];
         if (runtime_file_translate(std::string(path).c_str(), host, sizeof(host)) != 0) {
             LOG_ERROR(Lib_AvPlayer, "Cannot translate guest path {}", path);
@@ -551,7 +551,7 @@ void AvPlayerSource::DemuxerThread(std::stop_token stop) {
     }
     LOG_INFO(Lib_AvPlayer, "Demuxer Thread started");
 
-    // resogun: each loop shifts packet timestamps past the previous pass, so the playback
+    // tempest: each loop shifts packet timestamps past the previous pass, so the playback
     // clock (driven by audio timestamps) and the queued video frames keep increasing.
     const auto num_streams = m_avformat_context->nb_streams;
     std::vector<s64> loop_offset(num_streams, 0), stream_end(num_streams, 0);
@@ -570,7 +570,7 @@ void AvPlayerSource::DemuxerThread(std::stop_token stop) {
                 if (m_is_looping && packets_since_loop != 0) {
                     LOG_INFO(Lib_AvPlayer, "EOF reached in demuxer. Looping the source...");
                     m_state.OnWarning(ORBIS_AVPLAYER_ERROR_WAR_LOOPING_BACK);
-                    // resogun: no avio_seek to 0 first. FFmpeg's mov demuxer drops its
+                    // tempest: no avio_seek to 0 first. FFmpeg's mov demuxer drops its
                     // sample index when the I/O position is 0, after which every read is EOF.
                     int seek = 0;
                     for (const auto& index : {m_video_stream_index, m_audio_stream_index}) {

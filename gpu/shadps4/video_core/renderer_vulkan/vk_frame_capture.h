@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// resogun: frame analyzer. Creating the file named by RESOGUN_CAPTURE_TRIGGER records the next full
+// tempest: frame analyzer. Creating the file named by TEMPEST_CAPTURE_TRIGGER records the next full
 // frame: every render pass (targets, depth, draw count, shaders, sampled textures) and compute
 // dispatch, in order, plus the buffer that was presented: how the game builds its frame.
 

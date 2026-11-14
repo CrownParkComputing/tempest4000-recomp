@@ -7,8 +7,8 @@
 #include <sys/resource.h>
 #endif
 #include <time.h>
-#include "resogun_copy.h"
-#include "resogun_toggles.h"
+#include "tempest_copy.h"
+#include "tempest_toggles.h"
 #include <cstdio>
 #include <boost/preprocessor/stringize.hpp>
 
@@ -87,7 +87,7 @@ Liverpool::~Liverpool() {
 void Liverpool::ProcessCommands() {
     // Process incoming commands with high priority
     while (num_commands) {
-        // resogun: commands touch the caches and record commands, so the draw recording thread
+        // tempest: commands touch the caches and record commands, so the draw recording thread
         // runs dry first. The drain belongs to each command: a guest thread can queue one (a
         // download for its fault) after a check made before the loop, and it then ran beside
         // that thread (a NULL record chunk in SmallGuestCopy, crashes in the Vulkan driver).
@@ -109,10 +109,10 @@ void Liverpool::Process(std::stop_token stoken) {
     Common::SetCurrentThreadName("shadPS4:GpuCommandProcessor");
 #ifndef _WIN32
     if (clockid_t clock; pthread_getcpuclockid(pthread_self(), &clock) == 0) {
-        ResogunStats::gpu_thread_clock.store(static_cast<int>(clock));
+        TempestStats::gpu_thread_clock.store(static_cast<int>(clock));
     }
 #else
-    ResogunStats::gpu_thread_id.store(GetCurrentThreadId());
+    TempestStats::gpu_thread_id.store(GetCurrentThreadId());
 #endif
     gpu_id = std::this_thread::get_id();
 #if defined(__linux__) || defined(_WIN32)
@@ -125,7 +125,7 @@ void Liverpool::Process(std::stop_token stoken) {
             std::unique_lock lk{submit_mutex};
             Common::CondvarWait(submit_cv, lk, stoken,
                                 [this] { return num_commands || num_submits || submit_done; });
-            ResogunStats::gpu_idle_ns.fetch_add(
+            TempestStats::gpu_idle_ns.fetch_add(
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now() - idle_start).count(),
                 std::memory_order_relaxed);
@@ -176,7 +176,7 @@ void Liverpool::Process(std::stop_token stoken) {
             submit_done = false;
         }
 
-        // resogun: the guest takes GPU idle (sceGnmSubmitDone) as its work being done and frees
+        // tempest: the guest takes GPU idle (sceGnmSubmitDone) as its work being done and frees
         // the objects that hold its fence labels. The labels must be written before: the draw
         // recording thread and the fences it deferred to the Vulkan recording thread
         // (RecorderFences). Else a late fence write lands in freed memory (a corrupted guest
@@ -198,7 +198,7 @@ void Liverpool::Process(std::stop_token stoken) {
 }
 
 namespace {
-/// resogun: packets the GPU command thread handles while the draw recording thread may still
+/// tempest: packets the GPU command thread handles while the draw recording thread may still
 /// work on earlier draws (register state, draws it hands over, nested buffers). Every other
 /// packet first waits for that thread to run dry (Rasterizer::DrainDrawPipe).
 bool PipelinedOpcode(PM4ItOpcode opcode) {
@@ -258,22 +258,22 @@ void SignalEop(const PM4CmdEventWriteEop& eop) {
         [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
 }
 
-// resogun: end-of-pipe/-shader events run in order with the draws (Rasterizer::RunInOrder: on
+// tempest: end-of-pipe/-shader events run in order with the draws (Rasterizer::RunInOrder: on
 // the draw recording thread when the draw pipeline is in use).
 void RunEventWriteEop(Vulkan::Rasterizer& rasterizer, const u8* data) {
     const auto eop = *reinterpret_cast<const PM4CmdEventWriteEop*>(data);
     rasterizer.ProcessDownloadImages();
     // Guest memory copies on the copy threads precede the fence the guest sees.
-    // RESOGUN_ASYNC_FENCES=1 writes it once they are done instead of waiting for them; measured
+    // TEMPEST_ASYNC_FENCES=1 writes it once they are done instead of waiting for them; measured
     // slower (79 vs 83 FPS): the guest waits on these fences, and later fences stall it more
     // than the wait costs.
     static const bool async_fences = [] {
-        const char* env = std::getenv("RESOGUN_ASYNC_FENCES");
+        const char* env = std::getenv("TEMPEST_ASYNC_FENCES");
         return env && env[0] == '1';
     }();
-    if (async_fences && !ResogunToggle::Disabled(ResogunToggle::AsyncFences)) {
-        ResogunCopy::AfterCopies([eop] { SignalEop(eop); });
-    } else if (Vulkan::DrawPipe::OnStageB() && !ResogunToggle::Disabled(ResogunToggle::RecorderFences)) {
+    if (async_fences && !TempestToggle::Disabled(TempestToggle::AsyncFences)) {
+        TempestCopy::AfterCopies([eop] { SignalEop(eop); });
+    } else if (Vulkan::DrawPipe::OnStageB() && !TempestToggle::Disabled(TempestToggle::RecorderFences)) {
         // The draw recording thread does not wait: the Vulkan recording thread signals the
         // fence after the copies queued before it.
         rasterizer.SignalAfterHostCopies([eop] { SignalEop(eop); });
@@ -423,7 +423,7 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
             break;
         }
         case PM4ItOpcode::DumpConstRam: {
-            // resogun: earlier draws on the recording thread may still read constants here.
+            // tempest: earlier draws on the recording thread may still read constants here.
             if (rasterizer) {
                 rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonConstRam);
             }
@@ -466,7 +466,7 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
     FIBER_EXIT;
 }
 
-// resogun: graphics-register effects of a type-3 packet. The GPU thread and the draw-preparation
+// tempest: graphics-register effects of a type-3 packet. The GPU thread and the draw-preparation
 // workers both go through this function, and both fold every register-writing packet into a
 // running checksum: equal checksums at a draw mean equal register files.
 u64 Liverpool::HashRegisterPacket(u64 checksum, const u32* words, u32 count) {
@@ -662,11 +662,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 case PM4CmdNop::PayloadType::PatchedFlip: {
                     // There is no evidence that GPU CP drives flip events by parsing
                     // special NOP packets. For convenience lets assume that it does.
-                    // resogun: after the writes before it (the buffer label: WriteData, which
+                    // tempest: after the writes before it (the buffer label: WriteData, which
                     // may still be queued on the draw recording thread).
                     if (rasterizer) {
                         rasterizer->RunInOrder(&SignalFlip, header, sizeof(u32),
-                                               ResogunToggle::PipelinedMemoryWrites);
+                                               TempestToggle::PipelinedMemoryWrites);
                     } else {
                         Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxFlip);
                     }
@@ -798,7 +798,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 break; // registers: ApplyGraphicsRegisterPacket
             }
             case PM4ItOpcode::SetPredication: {
-                // resogun: once; a game can set it around most draws (~1000 lines a frame).
+                // tempest: once; a game can set it around most draws (~1000 lines a frame).
                 static std::once_flag predication_logged;
                 std::call_once(predication_logged,
                                [] { LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION"); });
@@ -1046,7 +1046,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     break;
                 }
                 if (rasterizer->RunInOrder(&RunDmaData, dma_data, sizeof(PM4DmaData),
-                                           ResogunToggle::PipelinedMemoryWrites) &&
+                                           TempestToggle::PipelinedMemoryWrites) &&
                     (dma_data->dst_sel == DmaDataDst::Memory ||
                      dma_data->dst_sel == DmaDataDst::MemoryUsingL2)) {
                     rasterizer->NotePendingGpuWrite(dma_data->DstAddress<VAddr>(),
@@ -1061,7 +1061,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 if (rasterizer) {
                     // In order with the draws (on the draw recording thread when in use).
                     if (rasterizer->RunInOrder(&RunWriteData, header, (count + 1) * sizeof(u32),
-                                               ResogunToggle::PipelinedMemoryWrites)) {
+                                               TempestToggle::PipelinedMemoryWrites)) {
                         NotePendingWrite(*write_data, (count - 2) * sizeof(u32));
                         rasterizer->NotePendingGpuWrite(write_data->Address<VAddr>(),
                                                         (count - 2) * sizeof(u32));
@@ -1123,11 +1123,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
                     break;
                 }
-                // resogun: a fence handed to the draw recording thread counts as written: that
+                // tempest: a fence handed to the draw recording thread counts as written: that
                 // thread runs everything in stream order.
                 if (u32 value; wait_reg_mem->mem_space.Value() ==
                                    PM4CmdWaitRegMem::MemSpace::Memory &&
-                               !ResogunToggle::Disabled(ResogunToggle::PendingFenceWaits) &&
+                               !TempestToggle::Disabled(TempestToggle::PendingFenceWaits) &&
                                PendingFenceValue(wait_reg_mem->Address<VAddr>(), value) &&
                                wait_reg_mem->TestValue(value)) {
                     break;
@@ -1217,17 +1217,17 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
     if (draw_prep) {
         draw_prep->EndSubmission();
     }
-    if (seq != NoSeq && ResogunStats::enabled) {
-        ResogunStats::submissions.fetch_add(1, std::memory_order_relaxed);
-#ifndef _WIN32 // resogun: per-thread rusage statistics are Linux-only
+    if (seq != NoSeq && TempestStats::enabled) {
+        TempestStats::submissions.fetch_add(1, std::memory_order_relaxed);
+#ifndef _WIN32 // tempest: per-thread rusage statistics are Linux-only
         if (rusage usage{}; getrusage(RUSAGE_THREAD, &usage) == 0) {
-            ResogunStats::gpu_user_us.store(u64(usage.ru_utime.tv_sec) * 1000000 + usage.ru_utime.tv_usec,
+            TempestStats::gpu_user_us.store(u64(usage.ru_utime.tv_sec) * 1000000 + usage.ru_utime.tv_usec,
                                        std::memory_order_relaxed);
-            ResogunStats::gpu_sys_us.store(u64(usage.ru_stime.tv_sec) * 1000000 + usage.ru_stime.tv_usec,
+            TempestStats::gpu_sys_us.store(u64(usage.ru_stime.tv_sec) * 1000000 + usage.ru_stime.tv_usec,
                                       std::memory_order_relaxed);
-            ResogunStats::gpu_invol_switches.store(usage.ru_nivcsw, std::memory_order_relaxed);
-            ResogunStats::gpu_vol_switches.store(usage.ru_nvcsw, std::memory_order_relaxed);
-            ResogunStats::gpu_minor_faults.store(usage.ru_minflt, std::memory_order_relaxed);
+            TempestStats::gpu_invol_switches.store(usage.ru_nivcsw, std::memory_order_relaxed);
+            TempestStats::gpu_vol_switches.store(usage.ru_nvcsw, std::memory_order_relaxed);
+            TempestStats::gpu_minor_faults.store(usage.ru_minflt, std::memory_order_relaxed);
         }
 #endif
     }
@@ -1251,7 +1251,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
     while (!acb.empty()) {
         ProcessCommands();
         if (rasterizer) {
-            rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute); // resogun: compute work uses the caches
+            rasterizer->DrainDrawPipe(Vulkan::DrawPipe::ReasonCompute); // tempest: compute work uses the caches
         }
 
         auto* header = reinterpret_cast<const PM4Header*>(acb.data());
@@ -1385,7 +1385,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             } else {
                 std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
                             header + 2, set_size);
-                // resogun: interleaves with the graphics stream at an unpredictable point, so
+                // tempest: interleaves with the graphics stream at an unpredictable point, so
                 // draw-preparation workers cannot reproduce it: make their checksums differ.
                 gfx_reg_checksum = HashRegisterPacket(gfx_reg_checksum ^ 0xA5C0A5C0A5C0ull,
                                                       reinterpret_cast<const u32*>(header),
@@ -1445,7 +1445,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::WriteData: {
-            // resogun: copies deferred to the recording thread precede writes the guest sees, and
+            // tempest: copies deferred to the recording thread precede writes the guest sees, and
             // so do graphics fences deferred to it (the pipe was drained before this packet).
             if (rasterizer) {
                 rasterizer->WaitHostCopies();
@@ -1482,7 +1482,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             break;
         }
         case PM4ItOpcode::ReleaseMem: {
-            // resogun: copies deferred to the recording thread precede writes the guest sees, and
+            // tempest: copies deferred to the recording thread precede writes the guest sees, and
             // so do graphics fences deferred to it (the pipe was drained before this packet).
             if (rasterizer) {
                 rasterizer->WaitHostCopies();

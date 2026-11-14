@@ -21,7 +21,7 @@ namespace {
 // For an eboot.bin that is not a verified build (scripts/prepare.py VERIFIED_BUILDS).
 constexpr wchar_t kUnverifiedWarning[] =
     L"This dump's eboot.bin is not the version this release was tested with (the unmodified eboot.bin "
-    L"of Resogun CUSA00038, update 1.10). Patched files, such as DLC unlockers, and other versions are "
+    L"of Tempest CUSA00038, update 1.10). Patched files, such as DLC unlockers, and other versions are "
     L"untested: the game may be unstable or crash.\n\nAll add-ons already show as owned without an "
     L"unlocker.";
 
@@ -191,11 +191,11 @@ std::wstring strip(const std::wstring& s) {
 }
 
 void write_paths(const fs::path& ini, const fs::path& game, const fs::path& save, const fs::path& dlc) {
-    const std::string setup = "resogun-setup", cache = "~/.cache/resogun";
+    const std::string setup = "tempest-setup", cache = "~/.cache/tempest";
     const std::string nl = kNewline;
     write_text(ini, "; Written by " + setup + ". Run it again to change these folders." + nl +
                     "; game: your dump (eboot.bin, sce_module, sce_sys, stream.dat). It is only ever read." + nl +
-                    "; save: your saves, and resogun.log in its log folder." + nl +
+                    "; save: your saves, and tempest.log in its log folder." + nl +
                     "; dlc: optional, one more folder of DLC (e.g. shadPS4's addcont), next to save's addcont." + nl +
                     "; Shader caches are in the shaders folder next to " + setup + "." + nl +
                     "; The GPU logs and screenshots are shared by every copy of the game: " + cache + nl +
@@ -206,7 +206,7 @@ void write_paths(const fs::path& ini, const fs::path& game, const fs::path& save
                     (dlc.empty() ? std::string() : "dlc=" + narrow(text(dlc)) + nl));
 }
 
-// The key of a settings.ini line ("key=value", gpu/shim/resogun_settings.cpp), lower case; empty
+// The key of a settings.ini line ("key=value", gpu/shim/tempest_settings.cpp), lower case; empty
 // for comments and other lines.
 std::wstring setting_key(std::string_view line) {
     size_t eq = line.find('=');
@@ -376,7 +376,7 @@ std::vector<std::wstring> missing_game_files(const fs::path& game) {
 
 fs::path user_paths_ini() {
     const char* config = std::getenv("XDG_CONFIG_HOME");
-    return (config && config[0] ? fs::path(config) : home() / ".config") / "resogun" / "paths.ini";
+    return (config && config[0] ? fs::path(config) : home() / ".config") / "tempest" / "paths.ini";
 }
 
 namespace {
@@ -508,7 +508,7 @@ fs::path install(const Options& opt, const Log& log) {
 
     std::vector<std::wstring> missing = missing_game_files(game);
     if (!missing.empty())
-        fail(L"This folder isn't a decrypted Resogun dump:\n" + text(game) +
+        fail(L"This folder isn't a decrypted Tempest dump:\n" + text(game) +
              L"\n\nMissing: " + join(missing));
 
     step(0.05, L"Preparing the game from your dump");
@@ -615,12 +615,12 @@ void create_shortcut(const fs::path& target, const fs::path& lnk) {
     fs::path folder = target.parent_path();
     std::string entry = "[Desktop Entry]\n"
                         "Type=Application\n"
-                        "Name=Resogun\n"
+                        "Name=Tempest\n"
                         "Exec=" + desktop_quote(target.native()) + "\n"
                         "Path=" + folder.native() + "\n"
                         "Terminal=false\n"
                         "Categories=Game;\n";
-    if (fs::path icon = folder / "resogun.png"; fs::is_regular_file(icon, ec))
+    if (fs::path icon = folder / "tempest.png"; fs::is_regular_file(icon, ec))
         entry += "Icon=" + icon.native() + "\n";
     fs::create_directories(lnk.parent_path(), ec);
     write_text(lnk, entry);

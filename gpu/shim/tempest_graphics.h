@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Display options of settings.ini (resogun_settings.h) and how their values are parsed.
+// Display options of settings.ini (tempest_settings.h) and how their values are parsed.
 #pragma once
 
 #include <array>
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <utility>
 
-namespace ResogunGraphics {
+namespace TempestGraphics {
 
 enum DisplayMode : int { Windowed = 0, Borderless = 1, Fullscreen = 2, DisplayModeCount };
 inline constexpr std::array<std::string_view, DisplayModeCount> DisplayModeKeys = {
@@ -60,4 +60,4 @@ inline std::pair<int, int> ParseWindowSize(std::string_view text) {
     return {1920, 1080};
 }
 
-} // namespace ResogunGraphics
+} // namespace TempestGraphics

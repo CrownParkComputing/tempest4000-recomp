@@ -1,5 +1,5 @@
-// resogun: fault-handler registry. The C loader's SIGSEGV handler calls
-// resogun_gpu_handle_fault() first; registered handlers run in priority order.
+// tempest: fault-handler registry. The C loader's SIGSEGV handler calls
+// tempest_gpu_handle_fault() first; registered handlers run in priority order.
 #pragma once
 #include <compare>
 #include <set>

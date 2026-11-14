@@ -221,7 +221,7 @@ GuestCallback runtime_guest_thread_dtors;
 /* The same libc also registers its thread atexit counter and report hooks; recorded the same way. */
 GuestCallback runtime_guest_thread_atexit_count, runtime_guest_thread_atexit_report;
 /* sceKernelIsNeoMode / sceKernelHasNeoMode: 1 on a PS4 Pro, which render_resolution=4k reports
- * (loader.c), as the GPU core does (gpu/shim/resogun_gpu.cpp). */
+ * (loader.c), as the GPU core does (gpu/shim/tempest_gpu.cpp). */
 static int neo;
 void runtime_kernel_set_neo_mode(int enabled) { neo=enabled!=0; }
 int runtime_kernel_neo_mode(void) { return neo; }

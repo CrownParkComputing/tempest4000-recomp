@@ -5,8 +5,8 @@
 #include <xxhash.h>
 #include "video_core/amdgpu/liverpool.h"
 
-#include "resogun_toggles.h"
-#include "resogun_settings.h"
+#include "tempest_toggles.h"
+#include "tempest_settings.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/div_ceil.h"
@@ -128,7 +128,7 @@ void TextureCache::RetireReadbacks() {
 bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
                                     ReadbackSource source) {
     if (!deferred_readbacks || !has_pending_readbacks.load(std::memory_order_acquire)) return false;
-    // resogun: image uploads read, and frees drop, exactly the image's bytes. A copy of a
+    // tempest: image uploads read, and frees drop, exactly the image's bytes. A copy of a
     // neighboring image that only shares a page is published later over other bytes. Only with
     // stale readbacks: otherwise pending pages are read-protected and the copy threads fault.
     const bool exact = ExactReadbackWaits() &&
@@ -161,7 +161,7 @@ bool TextureCache::ResolveReadbacks(VAddr address, u64 size, bool assume_locks,
                 }
             }
         }
-        ResogunStats::Timer readback_timer{ResogunStats::t_readback_wait};
+        TempestStats::Timer readback_timer{TempestStats::t_readback_wait};
         if (const u64 tick = pending_readbacks.RequiredTick(address, size, exact)) {
             ++readbacks_waited;
             waited = !scheduler.IsFree(tick);
@@ -190,7 +190,7 @@ void TextureCache::CancelReadbacks(VAddr address, u64 size, bool exact) {
     }, exact);
 }
 
-// resogun (RESOGUN_PERF_DIAG): a request PartialHeightViews answered with a taller cached image.
+// tempest (TEMPEST_PERF_DIAG): a request PartialHeightViews answered with a taller cached image.
 void TextureCache::NotePartialView(const ImageInfo& request, const ImageInfo& used,
                                    BindingType binding) {
     ++partial_views;
@@ -210,7 +210,7 @@ void TextureCache::NotePartialView(const ImageInfo& request, const ImageInfo& us
     ++slot->count;
 }
 
-// resogun (RESOGUN_PERF_DIAG): every 5 s, the images FindImage created most often. Takes `mutex`
+// tempest (TEMPEST_PERF_DIAG): every 5 s, the images FindImage created most often. Takes `mutex`
 // (held by FindImage), so it runs before ProcessDownloadImages takes readback_mutex.
 void TextureCache::ReportImageCreates() {
     const auto now = std::chrono::steady_clock::now();
@@ -252,7 +252,7 @@ void TextureCache::ReportImageCreates() {
     partial_views = 0;
 }
 
-// resogun: every copy is recorded first and the GPU is waited for once: a wait per image
+// tempest: every copy is recorded first and the GPU is waited for once: a wait per image
 // leaves the GPU mostly idle.
 void TextureCache::ProcessDownloadImages() {
     if (Vulkan::WaitDiagnostics::Enabled()) {
@@ -453,7 +453,7 @@ void TextureCache::DiagDumpImage(ImageId image_id, const char* tag) {
     scheduler.Finish();
     download.Invalidate();
     static int sequence = 0;
-    const char* dir = std::getenv("RESOGUN_DIAG_DIR");
+    const char* dir = std::getenv("TEMPEST_DIAG_DIR");
     const char* dir_path = dir && *dir ? dir : "out/diag";
     std::error_code ec;
     std::filesystem::create_directories(dir_path, ec);
@@ -471,7 +471,7 @@ void TextureCache::DiagDumpImage(ImageId image_id, const char* tag) {
     }
 }
 
-// resogun: images sharing guest memory (aliases), ported from cuesta4/shadPS4 (eltutz) commit
+// tempest: images sharing guest memory (aliases), ported from cuesta4/shadPS4 (eltutz) commit
 // 189ca3b6. A write to one is copied into the others before they are read, as on the PS4,
 // where they are the same memory.
 static bool Covers(const Extent3D& extent, const ImageInfo& info) {
@@ -604,7 +604,7 @@ void TextureCache::InvalidateAlias(Image& image) {
 }
 
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
-    // resogun: the image is still tracked, so its memory is what was uploaded. Hashed on
+    // tempest: the image is still tracked, so its memory is what was uploaded. Hashed on
     // every fault: a hash kept from an earlier one goes stale after a CpuDirty upload.
     const u8* addr = std::bit_cast<u8*>(image.info.guest_address);
     image.hash = XXH3_64bits(addr, image.info.guest_size);
@@ -701,7 +701,7 @@ void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
     ResolveReadbacks(address, max_size, true, ReadbackSource::GpuPartialWrite);
     std::scoped_lock lock{mutex};
     ForEachImageInRegion(address, max_size, [&](ImageId image_id, Image& image) {
-        // resogun: upstream only considers images at the write's base address. The game's
+        // tempest: upstream only considers images at the write's base address. The game's
         // compute shaders write stage textures as storage buffers over page runs of its texture
         // pool (0x1019239000 over a texture at 0x1019238d00), so textures packed there kept the
         // previous stage's texels until a restart (washed-out stages). A texture the GPU never
@@ -810,7 +810,7 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
     if (image_info.guest_address == cache_image.info.guest_address) {
         const u32 lhs_block_size = image_info.num_bits * image_info.guest_samples;
         const u32 rhs_block_size = cache_image.info.num_bits * cache_image.info.guest_samples;
-        // resogun: the top rows of a cached image with the same layout. A game can read its
+        // tempest: the top rows of a cached image with the same layout. A game can read its
         // frame buffers as R8G8B8A8Uint with a height that changes every frame; as a "pool allocation" below, each read created and uploaded
         // a new ~8 MB image (FPS 120 -> 40).
         // - Only an integer view of another format: same-format requests here are real pool
@@ -826,12 +826,12 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             const std::string_view numeric = vk::componentNumericFormat(format, 0);
             return numeric == "UINT" || numeric == "SINT";
         };
-        // resogun: partial-height views of screen effects (RESOGUN_PARTIAL_HEIGHT_VIEWS=0 turns them off).
+        // tempest: partial-height views of screen effects (TEMPEST_PARTIAL_HEIGHT_VIEWS=0 turns them off).
         static const bool partial_views_enabled = [] {
-            const char* value = std::getenv("RESOGUN_PARTIAL_HEIGHT_VIEWS");
+            const char* value = std::getenv("TEMPEST_PARTIAL_HEIGHT_VIEWS");
             return !value || value[0] != '0';
         }();
-        if (partial_views_enabled && !ResogunToggle::Disabled(ResogunToggle::PartialHeightViews) &&
+        if (partial_views_enabled && !TempestToggle::Disabled(TempestToggle::PartialHeightViews) &&
             (binding == BindingType::Texture || binding == BindingType::Storage) && native_reads &&
             a.pixel_format != b.pixel_format && is_integer(a.pixel_format) &&
             lhs_block_size == rhs_block_size && a.pitch == b.pitch && a.tile_mode == b.tile_mode &&
@@ -1117,7 +1117,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         cached.format == info.pixel_format && cached.type == info.type &&
         cached.exact_fmt == exact_fmt && cached.binding == desc.type &&
         cached.needs_native == desc.needs_native && cached.levels == info.resources.levels && cached.layers == info.resources.layers &&
-        !ResogunToggle::Disabled(ResogunToggle::FindImageCache)) {
+        !TempestToggle::Disabled(TempestToggle::FindImageCache)) {
         Image& image = slot_images[cached.image_id];
         image.tick_accessed_last = scheduler.CurrentTick();
         TouchImage(image);
@@ -1158,7 +1158,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         image_id = cache_id;
     }
 
-    // resogun (RESOGUN_PERF_DIAG): what was cached here, read before overlap resolution may free it.
+    // tempest (TEMPEST_PERF_DIAG): what was cached here, read before overlap resolution may free it.
     const bool diag = Vulkan::WaitDiagnostics::Enabled();
     CreateStat created{info.guest_address, info.size.width, info.size.height, 1, info.pixel_format,
                        desc.type, image_ids.empty() ? "nothing cached" : "overlap unresolved"};
@@ -1300,8 +1300,8 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc, Vi
     Image& image = slot_images[image_id];
     if (desc.type == BindingType::Storage) {
         image.flags |= ImageFlagBits::GpuModified;
-        // resogun: linear images a shader writes are read back without
-        // RESOGUN_READBACK_LINEAR too: Texture2D.ReadPixels copies a render texture into the
+        // tempest: linear images a shader writes are read back without
+        // TEMPEST_READBACK_LINEAR too: Texture2D.ReadPixels copies a render texture into the
         // texture's linear memory with a compute shader, then Apply uploads that memory (the Live
         // Info panel backgrounds).
         const bool linear = !image.info.props.is_tiled;
@@ -1317,7 +1317,7 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc, Vi
     if (desc.type == BindingType::Storage) {
         PublishAliasWrite(image_id);
     }
-    if (memo && !ResogunToggle::Disabled(ResogunToggle::TextureViewMemo)) {
+    if (memo && !TempestToggle::Disabled(TempestToggle::TextureViewMemo)) {
         if (memo->image_id == image_id && memo->backing == image.backing && memo->view_id) {
             return slot_image_views[memo->view_id];
         }
@@ -1377,7 +1377,7 @@ ImageView& TextureCache::FindDepthTarget(ImageId image_id, const ImageDesc& desc
     // If there is a stencil attachment, link depth and stencil.
     if (desc.info.stencil_addr != 0) {
         ImageId stencil_id{};
-        // resogun: only an 8-bit image (or the placeholder below) can be the stencil plane. The
+        // tempest: only an 8-bit image (or the placeholder below) can be the stencil plane. The
         // game reuses stencil memory for a 960x540 RGBA8 blur target; linking that image sent its
         // texture reads to this depth buffer and garbled the blurred background.
         ForEachImageInRegion(desc.info.stencil_addr, desc.info.stencil_size,
@@ -1409,14 +1409,14 @@ void TextureCache::RefreshImage(Image& image) {
     }
     ResolveReadbacks(image.info.guest_address, image.info.guest_size, true,
                      ReadbackSource::ImageRefresh);
-    ResogunStats::Timer timer{ResogunStats::t_refresh};
+    TempestStats::Timer timer{TempestStats::t_refresh};
 
     RENDERER_TRACE;
     TRACE_HINT(fmt::format("{:x}:{:x}", image.info.guest_address, image.info.guest_size));
 
     if (True(image.flags & ImageFlagBits::MaybeCpuDirty) &&
         False(image.flags & ImageFlagBits::CpuDirty)) {
-        // The image fits in one page. resogun: the whole image is hashed, not its first 8x8
+        // The image fits in one page. tempest: the whole image is hashed, not its first 8x8
         // pixels: a CPU write past the eighth row of a small texture would otherwise go unseen.
         const auto addr = std::bit_cast<u8*>(image.info.guest_address);
         const u64 hash = XXH3_64bits(addr, image.info.guest_size);
@@ -1432,7 +1432,7 @@ void TextureCache::RefreshImage(Image& image) {
     const bool is_gpu_modified = True(image.flags & ImageFlagBits::GpuModified);
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
 
-    ResogunStats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
+    TempestStats::image_upload_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
     boost::container::small_vector<vk::BufferImageCopy, 14> image_copies;
     for (u32 m = 0; m < num_mips; m++) {
         const u32 width = std::max(image.info.size.width >> m, 1u);
@@ -1504,7 +1504,7 @@ vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,
 }
 
 void TextureCache::RegisterImage(ImageId image_id) {
-    ResogunStats::images_registered.fetch_add(1, std::memory_order_relaxed);
+    TempestStats::images_registered.fetch_add(1, std::memory_order_relaxed);
     Image& image = slot_images[image_id];
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered),
                "Trying to register an already registered image");
@@ -1672,18 +1672,18 @@ void TextureCache::UntrackImageTail(ImageId image_id) {
 }
 
 void TextureCache::GarbageCollectImages() {
-    ResogunStats::Timer gc_timer{ResogunStats::t_gc};
+    TempestStats::Timer gc_timer{TempestStats::t_gc};
     if (instance.CanReportMemoryUsage()) {
         u64 budget_now = 0;
         total_used_memory = instance.GetDeviceMemoryUsage(&budget_now);
-        // resogun: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
+        // tempest: on integrated GPUs (Steam Deck) the usage covers system-memory heaps holding
         // much more than images (buffers backing guest memory), and the startup budget left
         // ~1 GB after its 8 GB system reserve: usage stayed above the critical mark, so the
         // collector evicted images used two or three frames ago on every submission and wrote
         // GPU-written ones back. Compare with the driver's current budget instead.
-        // RESOGUN_GC_BUDGET_MB=N: this rule with a fixed budget on any GPU (tests on a desktop).
+        // TEMPEST_GC_BUDGET_MB=N: this rule with a fixed budget on any GPU (tests on a desktop).
         static const u64 forced_budget = [] {
-            const char* env = std::getenv("RESOGUN_GC_BUDGET_MB");
+            const char* env = std::getenv("TEMPEST_GC_BUDGET_MB");
             return env ? std::strtoull(env, nullptr, 10) << 20 : 0;
         }();
         if (instance.IsIntegrated() || forced_budget) {
@@ -1694,7 +1694,7 @@ void TextureCache::GarbageCollectImages() {
                 critical_gc_memory = budget / 100 * 95;
             }
         } else if (budget_now != 0) {
-            // resogun: on a discrete GPU the marks came from the budget at start only. Windows
+            // tempest: on a discrete GPU the marks came from the budget at start only. Windows
             // lowers it when other programs take video memory (a browser, a recorder), and the
             // collector kept to the old marks, so the game could hold more than the driver then
             // gave it and have its video memory paged (suspected in issue #6: an 8 GB card at
@@ -1751,7 +1751,7 @@ void TextureCache::GarbageCollectImages() {
             return false;
         }
         if (download) {
-            // resogun: synchronously, while the image still protects its pages. A deferred
+            // tempest: synchronously, while the image still protects its pages. A deferred
             // write-back landed after FreeImage had unprotected them, over whatever the game
             // had meanwhile stored there (e.g. its heap after unloading an area).
             DownloadImageMemory(image_id, true);
@@ -1782,7 +1782,7 @@ void TextureCache::GarbageCollectImages() {
         configure(true);
         lru_cache.ForEachItemBelow(gc_tick - ticks_to_destroy, clean_up);
     }
-    // resogun: evictions under memory pressure, at most every 5 s (RESOGUN_FRAME_STATS or not).
+    // tempest: evictions under memory pressure, at most every 5 s (TEMPEST_FRAME_STATS or not).
     if (pressured || gc_downloads != 0) {
         const auto now = std::chrono::steady_clock::now();
         if (now - gc_report_time >= std::chrono::seconds(5)) {
@@ -1861,7 +1861,7 @@ void TextureCache::TouchImage(const Image& image) {
 
 void TextureCache::DeleteImage(ImageId image_id) {
     Image& image = slot_images[image_id];
-    // resogun: only this image's bytes. FreeImage resolved its own copies; with ExactReadbackWaits,
+    // tempest: only this image's bytes. FreeImage resolved its own copies; with ExactReadbackWaits,
     // copies of neighbors that only share a page are still pending and must reach RAM.
     CancelReadbacks(image.info.guest_address, image.info.guest_size, true);
     ASSERT_MSG(!image.IsTracked(), "Image was not untracked");
@@ -1872,7 +1872,7 @@ void TextureCache::DeleteImage(ImageId image_id) {
                               : alias_states.end();
     if (alias_it != alias_states.end()) {
         AliasState& state = alias_it.value();
-        // resogun: no copy here (DeleteImage also runs on guest threads through UnmapMemory,
+        // tempest: no copy here (DeleteImage also runs on guest threads through UnmapMemory,
         // which must not record commands); the aliases then re-read guest memory.
         if ((state.writer == image_id && state.writer_uid == image.image_uid) ||
             (state.backing == image_id && state.backing_uid == image.image_uid)) {

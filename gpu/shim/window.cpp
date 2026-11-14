@@ -1,4 +1,4 @@
-// resogun: SDL3 window for the Vulkan swapchain.
+// tempest: SDL3 window for the Vulkan swapchain.
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -16,18 +16,18 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "sdl_window.h"
-#include "resogun_overlay.h"
-#include "resogun_graphics.h"
-#include "resogun_settings.h"
+#include "tempest_overlay.h"
+#include "tempest_graphics.h"
+#include "tempest_settings.h"
 
 namespace Frontend {
 
-// resogun: the display the window opens on. RESOGUN_MONITOR is an index into SDL_GetDisplays()
+// tempest: the display the window opens on. TEMPEST_MONITOR is an index into SDL_GetDisplays()
 // (the order SDL lists them in); absent or empty means the primary display. An invalid,
 // negative or out-of-range value falls back to the primary with a diagnostic. SDL_WINDOWPOS_CENTERED
 // is SDL_WINDOWPOS_CENTERED_DISPLAY(0), so the primary stays the safe default on every path.
 static SDL_DisplayID MonitorDisplay() {
-    auto& settings = ResogunSettings::Get();
+    auto& settings = TempestSettings::Get();
     int detected = 0;
     if (SDL_DisplayID* list = SDL_GetDisplays(&detected)) {
         settings.monitors.clear();
@@ -42,11 +42,11 @@ static SDL_DisplayID MonitorDisplay() {
         }
         SDL_free(list);
     }
-    const char* value = std::getenv("RESOGUN_MONITOR");
-    const int index = ResogunGraphics::ParseMonitor(value ? value : "");
-    if (index == ResogunGraphics::PrimaryMonitor) {
+    const char* value = std::getenv("TEMPEST_MONITOR");
+    const int index = TempestGraphics::ParseMonitor(value ? value : "");
+    if (index == TempestGraphics::PrimaryMonitor) {
         if (value && value[0]) {
-            LOG_WARNING(Frontend, "RESOGUN_MONITOR \"{}\" is not a monitor index; using the primary display", value);
+            LOG_WARNING(Frontend, "TEMPEST_MONITOR \"{}\" is not a monitor index; using the primary display", value);
         }
         return SDL_GetPrimaryDisplay();
     }
@@ -59,7 +59,7 @@ static SDL_DisplayID MonitorDisplay() {
     }
     if (index < 0 || index >= count || std::find(settings.monitors.begin(), settings.monitors.end(), index) == settings.monitors.end()) {
         settings.monitor = settings.startup_monitor = -1;
-        LOG_WARNING(Frontend, "RESOGUN_MONITOR {} is out of range for {} display(s); using the primary display", value, count);
+        LOG_WARNING(Frontend, "TEMPEST_MONITOR {} is out of range for {} display(s); using the primary display", value, count);
         SDL_free(displays);
         return SDL_GetPrimaryDisplay();
     }
@@ -88,7 +88,7 @@ static std::vector<std::pair<int, int>> FullscreenModes(SDL_DisplayID display) {
 // with none gets the desktop's size fitted to it. A saved window size of another shape than
 // aspect_ratio moves to the nearest in height of that shape's.
 static void ListResolutions(SDL_DisplayID display) {
-    namespace S = ResogunSettings;
+    namespace S = TempestSettings;
     auto& settings = S::Get();
     settings.modes = FullscreenModes(display);
     const SDL_DisplayMode* desktop = SDL_GetDesktopDisplayMode(display);
@@ -126,12 +126,12 @@ static void ListResolutions(SDL_DisplayID display) {
     }
 }
 
-// resogun: a window opens at the size in settings.ini (window), fitted to the chosen display's
+// tempest: a window opens at the size in settings.ini (window), fitted to the chosen display's
 // usable area (with room for the title bar); one too large opens maximized, restoring to that size
 // shrunk to fit. The picture is scaled to the window either way. True when shrunk.
 static bool StartSize(s32& width, s32& height, SDL_DisplayID display) {
     constexpr int title_room = 48;
-    const int w = ResogunSettings::Get().window_width, h = ResogunSettings::Get().window_height;
+    const int w = TempestSettings::Get().window_width, h = TempestSettings::Get().window_height;
     double scale = 1.0;
     SDL_Rect usable{};
     if (SDL_GetDisplayUsableBounds(display, &usable) && usable.w > 0 && usable.h > title_room) {
@@ -149,21 +149,21 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     }
     const SDL_DisplayID display = MonitorDisplay();
     ListResolutions(display);
-    resolution = {ResogunSettings::Get().window_width.load(), ResogunSettings::Get().window_height.load()};
+    resolution = {TempestSettings::Get().window_width.load(), TempestSettings::Get().window_height.load()};
     {
         // The game's shape is fixed for the run: the window's size, or what fullscreen picks.
-        auto& settings = ResogunSettings::Get();
+        auto& settings = TempestSettings::Get();
         const int mode = settings.display_mode;
         auto [w, h] = resolution;
-        if (mode != ResogunGraphics::Windowed) {
-            const auto choice = ResogunSettings::PickFullscreen(mode == ResogunGraphics::Fullscreen, settings.aspect_ratio,
+        if (mode != TempestGraphics::Windowed) {
+            const auto choice = TempestSettings::PickFullscreen(mode == TempestGraphics::Fullscreen, settings.aspect_ratio,
                                                                 {settings.desktop_width, settings.desktop_height}, settings.modes);
             std::tie(w, h) = choice.picture;
         }
-        settings.startup_width_4k = ResogunSettings::WideWidth4k(w, h);
+        settings.startup_width_4k = TempestSettings::WideWidth4k(w, h);
         std::printf("Display: %s %dx%d (%s): the game's picture is %dx2160%s\n",
-                    mode == ResogunGraphics::Windowed ? "window" : "fullscreen picture", w, h,
-                    ResogunSettings::AspectLabel(w, h).c_str(), settings.startup_width_4k.load(),
+                    mode == TempestGraphics::Windowed ? "window" : "fullscreen picture", w, h,
+                    TempestSettings::AspectLabel(w, h).c_str(), settings.startup_width_4k.load(),
                     settings.startup_width_4k > 3840 ? ", wider than the PS4's" : "");
     }
     const bool too_large = StartSize(width_, height_, display);
@@ -181,8 +181,8 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
     ASSERT_MSG(window, "Failed to create window: {}", SDL_GetError());
-    // resogun: RESOGUN_WINDOW_ICON names a BMP (SDL's built-in format) for the window icon.
-    if (const char* icon_path = std::getenv("RESOGUN_WINDOW_ICON")) {
+    // tempest: TEMPEST_WINDOW_ICON names a BMP (SDL's built-in format) for the window icon.
+    if (const char* icon_path = std::getenv("TEMPEST_WINDOW_ICON")) {
         if (SDL_Surface* icon = SDL_LoadBMP(icon_path)) {
             SDL_SetWindowIcon(window, icon);
             SDL_DestroySurface(icon);
@@ -208,8 +208,8 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
     } else {
         UNREACHABLE_MSG("Unsupported SDL video driver {}", driver ? driver : "(none)");
     }
-    monitor = ResogunSettings::Get().monitor;
-    ApplyDisplayMode(ResogunSettings::Get().display_mode);
+    monitor = TempestSettings::Get().monitor;
+    ApplyDisplayMode(TempestSettings::Get().display_mode);
     int w = 0, h = 0;
     SDL_GetWindowSizeInPixels(window, &w, &h);
     width = w;
@@ -223,16 +223,16 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
 // swapchain follows the size events.
 void WindowSDL::ApplyDisplayMode(int mode) {
     display_mode = mode;
-    aspect_ratio = ResogunSettings::Get().aspect_ratio;
-    if (mode == ResogunGraphics::Windowed) {
+    aspect_ratio = TempestSettings::Get().aspect_ratio;
+    if (mode == TempestGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
     } else {
-        auto& settings = ResogunSettings::Get();
+        auto& settings = TempestSettings::Get();
         const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
         SDL_DisplayMode chosen{};
         const SDL_DisplayMode* target = SDL_GetDesktopDisplayMode(display);
-        const auto choice = ResogunSettings::PickFullscreen(
-            mode == ResogunGraphics::Fullscreen, aspect_ratio, target ? std::pair{target->w, target->h} : std::pair{0, 0},
+        const auto choice = TempestSettings::PickFullscreen(
+            mode == TempestGraphics::Fullscreen, aspect_ratio, target ? std::pair{target->w, target->h} : std::pair{0, 0},
             FullscreenModes(display));
         settings.fullscreen_width = choice.picture.first;
         settings.fullscreen_height = choice.picture.second;
@@ -240,21 +240,21 @@ void WindowSDL::ApplyDisplayMode(int mode) {
             SDL_GetClosestFullscreenDisplayMode(display, choice.mode.first, choice.mode.second, 0.0f, false, &chosen)) {
             target = &chosen;
         }
-        const bool exclusive = mode == ResogunGraphics::Fullscreen && target;
+        const bool exclusive = mode == TempestGraphics::Fullscreen && target;
         if (!SDL_SetWindowFullscreenMode(window, exclusive ? target : nullptr)) {
             LOG_WARNING(Frontend, "Fullscreen mode: {}", SDL_GetError());
         }
         SDL_SetWindowFullscreen(window, true);
     }
     SDL_SyncWindow(window);
-    std::printf("Window: %s\n", ResogunGraphics::DisplayModeNames[mode]);
+    std::printf("Window: %s\n", TempestGraphics::DisplayModeNames[mode]);
 }
 
 // A new window size: a window takes it (shrunk to fit the display's usable area), centred; the
 // fullscreen modes pick their own (ApplyDisplayMode) and use it when the window is windowed again.
 void WindowSDL::ApplyResolution(std::pair<int, int> size) {
     resolution = size;
-    if (display_mode == ResogunGraphics::Windowed) {
+    if (display_mode == TempestGraphics::Windowed) {
         const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
         s32 w = 0, h = 0;
         StartSize(w, h, display);
@@ -277,13 +277,13 @@ void WindowSDL::ApplyMonitor(int index) {
         SDL_free(displays);
     }
     if (SDL_GetDisplayForWindow(window) == display) return;
-    if (display_mode != ResogunGraphics::Windowed) {
+    if (display_mode != TempestGraphics::Windowed) {
         SDL_SetWindowFullscreen(window, false);
         SDL_SyncWindow(window);
     }
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED_DISPLAY(display), SDL_WINDOWPOS_CENTERED_DISPLAY(display));
     SDL_SyncWindow(window);
-    if (display_mode != ResogunGraphics::Windowed) ApplyDisplayMode(display_mode);
+    if (display_mode != TempestGraphics::Windowed) ApplyDisplayMode(display_mode);
     std::printf("Window: moved to display %d\n", index);
 }
 
@@ -309,7 +309,7 @@ void WindowSDL::UpdateTextTitle() {
     const std::string title = text_active ? base_title + " \u2014 " + text_prompt + ": " + text + "_  (Enter = OK, Esc = cancel)"
                                           : base_title;
     SDL_SetWindowTitle(window, title.c_str());
-    ResogunOverlay::SetTextEntry(text_active, text_prompt, text);
+    TempestOverlay::SetTextEntry(text_active, text_prompt, text);
 }
 
 #ifdef _WIN32
@@ -360,15 +360,15 @@ bool WindowSDL::PollEvents() {
             UpdateTextTitle();
         }
     }
-    if (const int mode = ResogunSettings::Get().display_mode;
-        mode != display_mode || (mode != ResogunGraphics::Windowed && ResogunSettings::Get().aspect_ratio != aspect_ratio)) {
+    if (const int mode = TempestSettings::Get().display_mode;
+        mode != display_mode || (mode != TempestGraphics::Windowed && TempestSettings::Get().aspect_ratio != aspect_ratio)) {
         ApplyDisplayMode(mode);
     }
-    if (const int index = ResogunSettings::Get().monitor; index != monitor) {
+    if (const int index = TempestSettings::Get().monitor; index != monitor) {
         ApplyMonitor(index);
     }
-    if (const std::pair<int, int> size{ResogunSettings::Get().window_width.load(),
-                                       ResogunSettings::Get().window_height.load()};
+    if (const std::pair<int, int> size{TempestSettings::Get().window_width.load(),
+                                       TempestSettings::Get().window_height.load()};
         size != resolution) {
         ApplyResolution(size);
     }
@@ -401,7 +401,7 @@ bool WindowSDL::PollEvents() {
             UpdateTextTitle();
             continue;
         }
-        if (ResogunOverlay::HandleEvent(event)) {
+        if (TempestOverlay::HandleEvent(event)) {
             continue;
         }
         switch (event.type) {

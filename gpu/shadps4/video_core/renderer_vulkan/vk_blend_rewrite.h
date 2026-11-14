@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
-// resogun: from cuesta4/shadPS4 (eltutz), GNM scaled MIN/MAX blends.
+// tempest: from cuesta4/shadPS4 (eltutz), GNM scaled MIN/MAX blends.
 
 #pragma once
 

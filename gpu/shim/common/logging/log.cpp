@@ -1,4 +1,4 @@
-// Resogun runner: see log.h.
+// Tempest runner: see log.h.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -14,7 +14,7 @@ static bool parse_level(std::string_view text, Level& out) {
         if (text == level_names[i]) return out = Level(i), true;
     return false;
 }
-// RESOGUN_GPU_LOG: space-separated tokens, "level" for the default and "Class:level" for the
+// TEMPEST_GPU_LOG: space-separated tokens, "level" for the default and "Class:level" for the
 // classes starting with Class (e.g. "warning Lib.AvPlayer:trace"). Default: warning.
 struct Filter {
     Level fallback = Level::warn;
@@ -23,7 +23,7 @@ struct Filter {
 static const Filter& filter() {
     static const Filter parsed = [] {
         Filter f;
-        const char* v = std::getenv("RESOGUN_GPU_LOG");
+        const char* v = std::getenv("TEMPEST_GPU_LOG");
         std::string_view rest = v ? v : "";
         while (!rest.empty()) {
             const size_t end = rest.find(' ');

@@ -88,7 +88,7 @@ public:
 
     void SetHDR(bool hdr);
 
-    /// resogun: VSync and tearing from the Display Settings panel (ResogunSettings::vsync, tearing);
+    /// tempest: VSync and tearing from the Display Settings panel (TempestSettings::vsync, tearing);
     /// recreates the swapchain when they changed. Present thread only.
     void UpdateVsync();
 

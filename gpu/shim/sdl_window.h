@@ -1,4 +1,4 @@
-// resogun: the game window. Created by the VideoOut driver on first open; the
+// tempest: the game window. Created by the VideoOut driver on first open; the
 // event pump runs on the port's window thread (see window.cpp).
 #pragma once
 #include <atomic>
@@ -61,12 +61,12 @@ private:
 #endif
     std::mutex text_mutex;
     bool text_requested{}, text_active{};
-    int display_mode = -1; ///< applied ResogunSettings display mode (window thread)
+    int display_mode = -1; ///< applied TempestSettings display mode (window thread)
     int aspect_ratio = -1; ///< the aspect ratio the fullscreen pick was made for (window thread)
     void ApplyDisplayMode(int mode);
-    int monitor = -1; ///< applied ResogunSettings monitor (window thread)
+    int monitor = -1; ///< applied TempestSettings monitor (window thread)
     void ApplyMonitor(int index);
-    std::pair<int, int> resolution{1920, 1080}; ///< applied ResogunSettings window size (window thread)
+    std::pair<int, int> resolution{1920, 1080}; ///< applied TempestSettings window size (window thread)
     void ApplyResolution(std::pair<int, int> size);
     int text_state{};
     std::string text, text_prompt, base_title;

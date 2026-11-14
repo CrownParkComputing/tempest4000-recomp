@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include "common/types.h"
-#include "resogun_png.h"
+#include "tempest_png.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 
 union SDL_Event;
@@ -16,7 +16,7 @@ namespace Vulkan {
 class Instance;
 }
 
-namespace ResogunOverlay {
+namespace TempestOverlay {
 
 /// Present thread, once: the ImGui context and its Vulkan backend.
 void Init(const Vulkan::Instance& instance, vk::Format format, u32 image_count);
@@ -37,7 +37,7 @@ void NoteShaderCompiles(u32 pending, u32 started, u32 waits);
 
 /// Before the presenter exists: the game's start-up picture (sce_sys/pic1.png), drawn under the
 /// rest until the game's frames show something, then faded out, as the PS4 does while a game starts.
-void SetSplash(ResogunPng::Image picture);
+void SetSplash(TempestPng::Image picture);
 /// The start-up picture is up and waits for a game frame that is not black.
 bool SplashWaiting();
 /// Any thread, for each game frame read back while SplashWaiting: whether it shows a picture.
@@ -59,7 +59,7 @@ bool CapturesInput();
 void OpenDisplaySettings();
 bool DisplaySettingsOpen();
 
-/// Any thread: asks "Exit Resogun?" with No focused (also F4; Back on the title screen); Yes
+/// Any thread: asks "Exit Tempest?" with No focused (also F4; Back on the title screen); Yes
 /// pushes SDL_EVENT_QUIT (as closing the window). It takes the input while open.
 void OpenExitPrompt();
 
@@ -71,8 +71,8 @@ void SetTextEntry(bool active, const std::string& prompt, const std::string& tex
 /// cancels (Esc/Circle). `pictures`: one per item (empty = none), drawn beside its text.
 /// PollChoice: -1 while open, -2 cancelled, else the chosen index.
 void BeginChoice(const std::string& title, const std::vector<std::string>& items,
-                 std::vector<ResogunPng::Image> pictures, int focus,
-                 const std::string& preview_label = {}, ResogunPng::Image preview = {});
+                 std::vector<TempestPng::Image> pictures, int focus,
+                 const std::string& preview_label = {}, TempestPng::Image preview = {});
 int PollChoice();
 
-} // namespace ResogunOverlay
+} // namespace TempestOverlay

@@ -12,7 +12,7 @@
  *   Tab/P Options, T touchpad click. */
 #define _GNU_SOURCE
 #include "runtime.h"
-#include "gpu/resogun_gpu.h"
+#include "gpu/tempest_gpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -156,7 +156,7 @@ static SDL_Gamepad *host_gamepad(SDL_Gamepad *g, uint64_t now, uint64_t *next_sc
     SDL_free(ids);
     return g;
 }
-/* PS4 button names for scripted input (RESOGUN_PAD_FILE). */
+/* PS4 button names for scripted input (TEMPEST_PAD_FILE). */
 static const struct { const char *name; uint32_t ps; } ps_names[]={
     {"cross",BTN_CROSS}, {"circle",BTN_CIRCLE}, {"square",BTN_SQUARE}, {"triangle",BTN_TRIANGLE},
     {"l1",BTN_L1}, {"r1",BTN_R1}, {"l2",BTN_L2}, {"r2",BTN_R2}, {"l3",BTN_L3}, {"r3",BTN_R3},
@@ -218,7 +218,7 @@ static void host_read(PadData *d, SDL_Gamepad *g, uint8_t connected_count) {
     d->left_x=d->left_y=d->right_x=d->right_y=128;
     d->orientation[3]=1.0f;
     d->connected=1; d->connected_count=connected_count ? connected_count : 1;
-    if (resogun_gpu_overlay_captures_input()) return; /* a dialog is open: neutral input */
+    if (tempest_gpu_overlay_captures_input()) return; /* a dialog is open: neutral input */
     const bool *k=SDL_WasInit(SDL_INIT_VIDEO) ? SDL_GetKeyboardState(NULL) : NULL;
     if (g) {
         for (size_t i=0;i<pad_map.count;++i)
@@ -261,12 +261,12 @@ static void select_hold(PadData *d, SDL_Gamepad *g, uint64_t now) {
     const bool down=g && SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_BACK);
     if (down) {
         if (!since) { since=now; opened=false; }
-        if (resogun_gpu_overlay_captures_input()) opened=true;
+        if (tempest_gpu_overlay_captures_input()) opened=true;
         d->buttons&=~bits;
         if (!opened && now-since>=SELECT_HOLD_US) {
             opened=true;
-            if (!resogun_display_settings_is_open()) {
-                resogun_display_settings_open();
+            if (!tempest_display_settings_is_open()) {
+                tempest_display_settings_open();
                 puts("Runtime: Select held; Display Settings opened");
             }
         }
@@ -288,13 +288,13 @@ static _Atomic int title_showing;
 static void title_back(PadData *d) {
     static bool was_down;
     /* An overlay's input (the prompt answered No with Circle) counts as held: a new press opens it. */
-    if (resogun_gpu_overlay_captures_input()) { was_down=true; return; }
+    if (tempest_gpu_overlay_captures_input()) { was_down=true; return; }
     const bool down=(d->buttons & BTN_CIRCLE)!=0;
     const bool pressed=down && !was_down;
     was_down=down;
-    if (!pressed || !atomic_load(&title_showing) || !resogun_title_back_exits()) return;
+    if (!pressed || !atomic_load(&title_showing) || !tempest_title_back_exits()) return;
     d->buttons&=~BTN_CIRCLE;
-    resogun_exit_prompt_open();
+    tempest_exit_prompt_open();
     puts("Runtime: Back on the title screen; asking whether to close the game");
 }
 
@@ -329,17 +329,17 @@ static void *host_thread(void *arg) {
     return NULL;
 }
 
-/* RESOGUN_PAD_FILE=<file>: scripted input for automated runs. The file holds whitespace-separated
+/* TEMPEST_PAD_FILE=<file>: scripted input for automated runs. The file holds whitespace-separated
  * tokens, re-read when it changes: button names (cross circle square triangle l1 r1 l2 r2 l3 r3
  * options touchpad up down left right) are held while listed; lx= ly= rx= ry= (0..255) override
  * the sticks; reconnect closes the gamepad once per edit and the host thread opens
  * it again, as after a real reconnect. An empty file releases everything. */
 static struct { uint32_t buttons; int stick[4]; } injected={0,{-1,-1,-1,-1}};
-static int replay_armed;      /* 1 while a RESOGUN_PAD_REPLAY recording plays, 2 once it ended */
+static int replay_armed;      /* 1 while a TEMPEST_PAD_REPLAY recording plays, 2 once it ended */
 static uint64_t replay_start; /* 0: (re)start at the next sample */
 static void read_inject(void) {
     static const char *path; static int checked; static uint64_t last_check; static struct timespec mtime;
-    if (!checked) { path=getenv("RESOGUN_PAD_FILE"); checked=1; }
+    if (!checked) { path=getenv("TEMPEST_PAD_FILE"); checked=1; }
     if (!path || !*path) return;
     uint64_t now=now_us();
     if (now-last_check<20000) return;
@@ -362,7 +362,7 @@ static void read_inject(void) {
     char token[64];
     int reconnect=0;
     while (fscanf(f,"%63s",token)==1) {
-        if (!strcmp(token,"replay") && replay_armed!=1) { replay_armed=1; replay_start=0; } /* RESOGUN_PAD_REPLAY */
+        if (!strcmp(token,"replay") && replay_armed!=1) { replay_armed=1; replay_start=0; } /* TEMPEST_PAD_REPLAY */
         if (!strcmp(token,"reconnect")) reconnect=1;
         for (size_t i=0;i<sizeof(ps_names)/sizeof(*ps_names);++i) if (!strcmp(token,ps_names[i].name)) injected.buttons|=ps_names[i].ps;
         for (int i=0;i<4;++i) if (!strncmp(token,sticks[i],3)) { int v=atoi(token+3); injected.stick[i]=v<0 ? 0 : v>255 ? 255 : v; }
@@ -372,9 +372,9 @@ static void read_inject(void) {
     printf("Runtime: pad file: buttons 0x%x sticks %d %d %d %d\n",injected.buttons,
            injected.stick[0],injected.stick[1],injected.stick[2],injected.stick[3]);
 }
-/* RESOGUN_PAD_RECORD=<file>: F9 starts and stops recording the pad state (gamepad or keyboard) with
- * the time since F9; RESOGUN_PAD_REPLAY=<file> plays such a recording back, started by the token
- * "replay" in RESOGUN_PAD_FILE (scripted tests repeat a route the player ran once). Lines: ms buttons
+/* TEMPEST_PAD_RECORD=<file>: F9 starts and stops recording the pad state (gamepad or keyboard) with
+ * the time since F9; TEMPEST_PAD_REPLAY=<file> plays such a recording back, started by the token
+ * "replay" in TEMPEST_PAD_FILE (scripted tests repeat a route the player ran once). Lines: ms buttons
  * lx ly rx ry l2 r2, written when the state changes. */
 typedef struct { uint32_t ms, buttons; uint8_t axes[4], l2, r2; } PadSample;
 static FILE *record_file;
@@ -382,7 +382,7 @@ static uint64_t record_start;
 static PadSample record_last;
 static void record_sample(const PadData *d) {
     static const char *path; static int checked, f9_was_down;
-    if (!checked) { path=getenv("RESOGUN_PAD_RECORD"); checked=1; }
+    if (!checked) { path=getenv("TEMPEST_PAD_RECORD"); checked=1; }
     if (!path || !*path || !sdl_ready) return;
     const bool *k=SDL_GetKeyboardState(NULL);
     const int f9=k && k[SDL_SCANCODE_F9];
@@ -414,7 +414,7 @@ static void replay_sample(PadData *d) {
         static int loaded;
         if (!loaded) {
             loaded=1;
-            const char *path=getenv("RESOGUN_PAD_REPLAY");
+            const char *path=getenv("TEMPEST_PAD_REPLAY");
             FILE *f=path ? fopen(path,"r") : NULL;
             PadSample s; unsigned v[8]; size_t cap=0;
             while (f && fscanf(f,"%u %u %u %u %u %u %u %u",&v[0],&v[1],&v[2],&v[3],&v[4],&v[5],&v[6],&v[7])==8) {
@@ -452,7 +452,7 @@ static _Atomic int title_movie=TITLE_NONE;
 static _Atomic uint64_t title_since;
 void runtime_pad_title_movie(int playing) {
     atomic_store(&title_showing,playing!=0);
-    if (!resogun_skip_intro()) { if (playing) puts("Intro: title screen"); return; }
+    if (!tempest_skip_intro()) { if (playing) puts("Intro: title screen"); return; }
     if (playing) {
         int none=TITLE_NONE;
         if (!atomic_compare_exchange_strong(&title_movie,&none,TITLE_PLAYING)) return;
@@ -481,7 +481,7 @@ static void sample(PadData *d) {
         d->connected=d->connected_count=1;
     }
     d->timestamp=now_us();
-    if (resogun_gpu_overlay_captures_input()) { hold_after_capture=1; click.active=false; title_back(d); return; }
+    if (tempest_gpu_overlay_captures_input()) { hold_after_capture=1; click.active=false; title_back(d); return; }
     record_sample(d); /* the click sources as they are: a replay plays them again */
     read_inject();
     replay_sample(d);
@@ -585,7 +585,7 @@ void runtime_pad_report(void) {
            slow_calls[SLOW_INFO],slow_max_us[SLOW_INFO]/1e3,slow_calls[SLOW_HOST],slow_max_us[SLOW_HOST]/1e3);
 }
 
-/* resogun --gamepad: runs before any game state exists, so it uses its own SDL gamepad and leaves
+/* tempest --gamepad: runs before any game state exists, so it uses its own SDL gamepad and leaves
  * the lock and statics above alone. */
 static const char *label_name(SDL_GamepadButtonLabel label) {
     switch (label) {

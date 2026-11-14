@@ -7,7 +7,7 @@
 #include "common/assert.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
-#include "resogun_settings.h"
+#include "tempest_settings.h"
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -202,9 +202,9 @@ void Swapchain::FindPresentFormat() {
         std::find_if(formats.begin(), formats.end(), [](const vk::SurfaceFormatKHR& format) {
             return format == SURFACE_FORMAT_HDR;
         }) != formats.end();
-    // resogun: which of the two the display and the setting allow, once; the Display
+    // tempest: which of the two the display and the setting allow, once; the Display
     // Settings panel shows the first.
-    ResogunSettings::Get().hdr_display = supports_hdr ? 1 : 0;
+    TempestSettings::Get().hdr_display = supports_hdr ? 1 : 0;
     static bool hdr_logged = false;
     if (!hdr_logged) {
         hdr_logged = true;
@@ -248,12 +248,12 @@ void Swapchain::FindPresentMode() {
         return;
     }
 
-    // resogun: VSync on is Fifo (no tearing, waits for the display); off is Mailbox when the
+    // tempest: VSync on is Fifo (no tearing, waits for the display); off is Mailbox when the
     // driver has it, else Immediate (tearing allowed), else Fifo. Off with tearing prefers
     // Immediate: NVIDIA's Mailbox frees an image only as the display takes one, two frames per
     // refresh (119.9 FPS on a 59.95 Hz panel, borderless or fullscreen alike).
-    vsync = ResogunSettings::Get().vsync;
-    tearing = ResogunSettings::Get().tearing;
+    vsync = TempestSettings::Get().vsync;
+    tearing = TempestSettings::Get().tearing;
     const auto has = [&](vk::PresentModeKHR mode) { return std::ranges::find(modes, mode) != modes.cend(); };
     const auto first = tearing ? vk::PresentModeKHR::eImmediate : vk::PresentModeKHR::eMailbox;
     const auto second = tearing ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eImmediate;
@@ -266,7 +266,7 @@ void Swapchain::FindPresentMode() {
 }
 
 void Swapchain::UpdateVsync() {
-    const auto& settings = ResogunSettings::Get();
+    const auto& settings = TempestSettings::Get();
     if (settings.vsync == vsync && settings.tearing == tearing) {
         return;
     }

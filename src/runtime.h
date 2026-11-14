@@ -1,5 +1,5 @@
-#ifndef RESOGUN_RUNTIME_H
-#define RESOGUN_RUNTIME_H
+#ifndef TEMPEST_RUNTIME_H
+#define TEMPEST_RUNTIME_H
 #include <stdint.h>
 #include <stddef.h>
 #include <setjmp.h>
@@ -7,7 +7,7 @@
 extern __thread sigjmp_buf *runtime_fault_recover;
 /* Restarts the game (in-game settings menu, render resolution change). */
 void runtime_restart(void);
-/* RESOGUN_SLOW_WAITS=<ms>: log guest blocking calls (locks, waits, reads) longer than that.
+/* TEMPEST_SLOW_WAITS=<ms>: log guest blocking calls (locks, waits, reads) longer than that.
  * runtime_wait_begin() returns 0 when it is off; runtime_wait_end() then does nothing. */
 uint64_t runtime_wait_begin(void);
 void runtime_wait_end(const char *what,uint64_t start,const char *detail,long long arg);
@@ -40,7 +40,7 @@ void runtime_game_set_image(unsigned char *image);
 /* At each flip, on the game's thread (videoout, gnmdriver): settings.ini frame_rate onto the
  * engine's frame clock when they differ. */
 void runtime_game_frame_rate(void);
-/* A picture other than 16:9 (width_4k = resogun_width_4k(), not 3840): the engine's display size
+/* A picture other than 16:9 (width_4k = tempest_width_4k(), not 3840): the engine's display size
  * table and scene targets are resized to it. At load, before the image is protected. 0, with a
  * log line, when the image is not eboot 01.10 as expected. */
 int runtime_game_widen(unsigned char *image, uint32_t width_4k);
@@ -72,9 +72,9 @@ void runtime_module_register(unsigned char *image, RuntimeModule *modules, uint6
 void runtime_module_set_main(const RuntimeModule *main);
 /* Candidate guest return addresses on this thread's stack as "Module.prx+0xoffset" (traces). */
 void runtime_guest_backtrace(char *out, size_t size, int max);
-/* RESOGUN_THROW_TRACE=1: log guest C++ throws (after runtime_module_set_main). */
+/* TEMPEST_THROW_TRACE=1: log guest C++ throws (after runtime_module_set_main). */
 void runtime_throw_trace_install(void);
-/* RESOGUN_VERBOSE=1: log routine events too (runtime.c). */
+/* TEMPEST_VERBOSE=1: log routine events too (runtime.c). */
 int runtime_verbose(void);
 uintptr_t runtime_module_resolve(const char *name);
 void runtime_module_report(void);
@@ -137,7 +137,7 @@ void runtime_thread_keys_cleanup(void);
 /* Guest-visible errno values are FreeBSD's. */
 int32_t runtime_guest_errno(int host_errno);
 void *runtime_low_map(size_t size, int prot);
-/* Zeroed, 64-byte aligned host records the guest sees by address, below 1 TiB (RESOGUN_LOW_HANDLES). */
+/* Zeroed, 64-byte aligned host records the guest sees by address, below 1 TiB (TEMPEST_LOW_HANDLES). */
 void *runtime_low_alloc(size_t size);
 void runtime_low_free(void *pointer);
 /* Windows: reserves the PS4 user address range as a placeholder (no-op elsewhere). */
@@ -147,7 +147,7 @@ uintptr_t runtime_audio_resolve(const char *name);
 void runtime_audio_report(void);
 uintptr_t runtime_pad_resolve(const char *name);
 void runtime_pad_report(void);
-/* resogun --gamepad: prints one "Gamepad:" line for the first pad found (returns 1) or none (0). */
+/* tempest --gamepad: prints one "Gamepad:" line for the first pad found (returns 1) or none (0). */
 int runtime_pad_describe(void);
 uintptr_t runtime_rtc_resolve(const char *name);
 uintptr_t runtime_json_resolve(const char *name);

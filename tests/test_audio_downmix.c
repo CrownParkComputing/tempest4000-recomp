@@ -1,6 +1,6 @@
 /* The 7.1 fold to stereo / 5.1, the soft limiter and the speaker layout choice
    (src/runtime_audio.c). The last test runs the real AudioOut entry points on SDL's dummy audio
-   driver and reads back the converted PCM through RESOGUN_AUDIO_DUMP. */
+   driver and reads back the converted PCM through TEMPEST_AUDIO_DUMP. */
 #define _GNU_SOURCE
 #include <assert.h>
 #include <math.h>
@@ -10,11 +10,11 @@ uintptr_t runtime_lookup(const RuntimeExport *table, size_t count, const char *n
     (void)table; (void)count; (void)name;
     return 0;
 }
-/* The menu's setting, as resogun_gpu.cpp would serve it. */
+/* The menu's setting, as tempest_gpu.cpp would serve it. */
 static int stub_mode=MODE_AUTO;
-int resogun_gpu_audio_channels(void) { return stub_mode; }
-/* The menu's pause (resogun_gpu.cpp): never paused here. */
-void resogun_gpu_wait_while_paused(void) {}
+int tempest_gpu_audio_channels(void) { return stub_mode; }
+/* The menu's pause (tempest_gpu.cpp): never paused here. */
+void tempest_gpu_wait_while_paused(void) {}
 
 static int near(float a, float b) { return fabsf(a-b)<1e-3f; }
 static void set_env(const char *name, const char *value) {
@@ -172,9 +172,9 @@ static size_t run_port(const char *dump, int mode, const float *frame_ps4, float
     return n;
 }
 static void test_end_to_end(void) {
-    const char *dump="resogun_audio_test_dump"; /* in the working directory; each run removes its file */
+    const char *dump="tempest_audio_test_dump"; /* in the working directory; each run removes its file */
     set_env("SDL_AUDIODRIVER","dummy");
-    set_env("RESOGUN_AUDIO_DUMP",dump);
+    set_env("TEMPEST_AUDIO_DUMP",dump);
     assert(audio_init()==0);
 
     /* PS4 order L R C LFE SL SR BL BR. */

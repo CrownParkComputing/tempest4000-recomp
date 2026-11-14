@@ -1,7 +1,7 @@
 /* Narrow, explicit PS4 libc contracts. No automatic success stubs. */
 #define _CRT_RAND_S
 #include "runtime.h"
-#include "gpu/resogun_gpu.h"
+#include "gpu/tempest_gpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -87,12 +87,12 @@ void runtime_report(void) {
     if (report_hook) report_hook();
 }
 void runtime_set_report_hook(void (*hook)(void)) { report_hook = hook; }
-/* RESOGUN_VERBOSE=1: one line per routine event (threads, semaphores, memory maps, module
+/* TEMPEST_VERBOSE=1: one line per routine event (threads, semaphores, memory maps, module
  * loads and lookups). Off by default, so a player's log keeps faults, stops and errors readable;
  * run.py turns it on. */
 int runtime_verbose(void) {
     static int v=-1;
-    if (v<0) { const char *e=getenv("RESOGUN_VERBOSE"); v=e && e[0]=='1'; }
+    if (v<0) { const char *e=getenv("TEMPEST_VERBOSE"); v=e && e[0]=='1'; }
     return v;
 }
 static ABI void init_env(void) {
@@ -268,7 +268,7 @@ uintptr_t runtime_resolve(const char *name, int is_data) {
     if (file) return file;
     uintptr_t module = runtime_module_resolve(name);
     if (module) return module;
-    return resogun_gpu_resolve(name);
+    return tempest_gpu_resolve(name);
 }
 static const struct { const char *nid, *symbol; } import_names[]={
 #include "import_names.inc"

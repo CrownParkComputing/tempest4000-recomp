@@ -314,14 +314,14 @@ bool EqueueInternal::EventExists(u64 id, s16 filter) {
     return it != m_events.cend();
 }
 
-static s32 NextEqueueHandle() { // resogun
+static s32 NextEqueueHandle() { // tempest
     static std::atomic<s32> next{0x40000};
     return next++;
 }
 
 s32 PS4_SYSV_ABI posix_kqueue() {
     // Reserve a file handle for the kqueue
-    // resogun: equeue handles come from their own range, not the file table.
+    // tempest: equeue handles come from their own range, not the file table.
     s32 kqueue_handle = NextEqueueHandle();
 
     // Plenty of equeue logic uses names to identify queues.
@@ -438,7 +438,7 @@ int PS4_SYSV_ABI sceKernelCreateEqueue(OrbisKernelEqueue* eq, const char* name) 
     LOG_INFO(Kernel_Event, "name = {}", name);
 
     // Reserve a file handle for the kqueue
-    // resogun: equeue handles come from their own range, not the file table.
+    // tempest: equeue handles come from their own range, not the file table.
     OrbisKernelEqueue kqueue_handle = NextEqueueHandle();
 
     // Create the equeue
@@ -458,7 +458,7 @@ int PS4_SYSV_ABI sceKernelDeleteEqueue(OrbisKernelEqueue eq) {
     return ORBIS_OK;
 }
 
-// resogun: RESOGUN_SLOW_WAITS=<ms> logs guest waits longer than that (src/runtime_thread.c).
+// tempest: TEMPEST_SLOW_WAITS=<ms> logs guest waits longer than that (src/runtime_thread.c).
 extern "C" uint64_t runtime_wait_begin(void);
 extern "C" void runtime_wait_end(const char* what, uint64_t start, const char* detail,
                                  long long arg);
@@ -484,7 +484,7 @@ int PS4_SYSV_ABI sceKernelWaitEqueue(OrbisKernelEqueue eq, OrbisKernelEvent* ev,
         return ORBIS_KERNEL_ERROR_EINVAL;
     }
 
-    const u64 wait_start = runtime_wait_begin(); // resogun: slow-wait log, 0 when off
+    const u64 wait_start = runtime_wait_begin(); // tempest: slow-wait log, 0 when off
     *out = equeue->WaitForEvents(ev, num, timo);
     if (wait_start) {
         runtime_wait_end("equeue wait", wait_start, std::string(equeue->GetName()).c_str(), *out);

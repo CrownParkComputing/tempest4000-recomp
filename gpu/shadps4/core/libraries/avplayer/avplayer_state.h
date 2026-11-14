@@ -31,7 +31,7 @@ public:
     bool EnableStream(u32 stream_index);
     bool Start();
     bool Stop();
-    bool StopLocked(); // resogun: Stop without taking m_source_mutex
+    bool StopLocked(); // tempest: Stop without taking m_source_mutex
     bool Pause();
     bool Resume();
     void SetAvSyncMode(AvPlayerAvSyncMode sync_mode);
@@ -41,7 +41,7 @@ public:
     bool IsActive();
     u64 CurrentTime();
     bool SetLooping(bool is_looping);
-    bool JumpToTime(u64 time); // resogun: acknowledges the jump (see avplayer_state.cpp)
+    bool JumpToTime(u64 time); // tempest: acknowledges the jump (see avplayer_state.cpp)
 
 private:
     // Event Replacement
@@ -90,7 +90,7 @@ private:
     std::atomic_uint32_t m_some_event_result{};
 
     std::shared_mutex m_source_mutex{};
-    bool m_title_movie = false; // resogun: this player shows the title screen (skip_intro)
+    bool m_title_movie = false; // tempest: this player shows the title screen (skip_intro)
     std::mutex m_state_machine_mutex{};
     std::mutex m_event_handler_mutex{};
     Kernel::Thread m_controller_thread{};

@@ -28,7 +28,7 @@ static void require_provider(void) {
  * runtime, so loading one only tracks a reference count. AppContent (0xb4)
  * additionally requires the configured content profile. */
 static unsigned module_refs[0x10000];
-/* sceSysmoduleLoadModule(id): Resogun ships no system module of its own to start (sce_module
+/* sceSysmoduleLoadModule(id): Tempest ships no system module of its own to start (sce_module
  * holds only libc and Fios2, linked at boot). */
 static ABI int32_t module_load(uint16_t id) {
     if (!id) return INVALID_ID;
@@ -85,7 +85,7 @@ static ABI int32_t param_int(uint32_t id,int32_t *out) {
     return 0;
 }
 /* Installed add-ons: each folder <user>/addcont/<label>/ is one, then each <extra>/<label>/ whose
- * label <user>/addcont/ lacks; its name is the entitlement label (up to 16 characters). Resogun's
+ * label <user>/addcont/ lacks; its name is the entitlement label (up to 16 characters). Tempest's
  * add-ons are ships and skins with no data of their own: a folder holding sce_sys is enough. */
 #define LABEL_SIZE 17
 #define MAX_ADDONS 64
@@ -137,7 +137,7 @@ static void scan_addons(void) {
 }
 /* sceAppContentGetAddcontInfo(service, label, info): the one add-on of `label` (17-byte
  * entitlement label) in the list's form, or DRM_NO_ENTITLEMENT when no folder has that label.
- * Resogun asks for each of its ships and skins this way. */
+ * Tempest asks for each of its ships and skins this way. */
 static ABI int32_t addon_info(uint32_t service,const char *label,void *info) {
     require_initialized();
     if (service) { fputs("STOP: nonzero AppContent service label unsupported\n",stderr); exit(21); }
@@ -154,7 +154,7 @@ static ABI int32_t addon_info(uint32_t service,const char *label,void *info) {
     return NO_ENTITLEMENT;
 }
 /* sceAppContentTemporaryDataMount2(option, mount) (shadPS4 app_content.cpp): names /temp0, kept in
- * <user>/temp0; the folder is made and mounted on the first call (Resogun's boot makes none). */
+ * <user>/temp0; the folder is made and mounted on the first call (Tempest's boot makes none). */
 static ABI int32_t temp_mount(uint32_t option,char *mount) {
     static int mounted;
     (void)option;

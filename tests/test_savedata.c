@@ -41,7 +41,7 @@ int main(void) {
     const char *tmp=getenv("TMP");
     if (!tmp) tmp=getenv("TEMP");
     if (!tmp) tmp="/tmp";
-    snprintf(user_dir,sizeof(user_dir),"%s/resogun-savedata-test-%d",tmp,(int)getpid());
+    snprintf(user_dir,sizeof(user_dir),"%s/tempest-savedata-test-%d",tmp,(int)getpid());
     runtime_savedata_configure("CUSA00038");
     assert(runtime_savedata_mtime(1,"savedata")==0); /* no saves yet */
 

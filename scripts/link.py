@@ -1,9 +1,9 @@
 """Link the eboot with the game's bundled system modules into one image (after prepare.py).
 
-The modules started at boot are libc.prx and libSceFios2.prx, the system modules Resogun ships.
+The modules started at boot are libc.prx and libSceFios2.prx, the system modules Tempest ships.
 Every module is placed after the previous one; imports of all modules share one import table, so
 the C runtime can override any function (host contracts first) and otherwise binds the native
-export. Any other module in sce_module (Resogun has none) would be linked deferred: mapped and
+export. Any other module in sce_module (Tempest has none) would be linked deferred: mapped and
 relocated, started when the game asks for it, its exports listed by NID for sceKernelDlsym.
 
 Exports are matched by (NID, library identity, module identity). Imports of
@@ -21,7 +21,7 @@ import struct
 from prepare import parse_self, read_self, span, unpack
 
 DEFAULT_MODULES = ('libc.prx', 'libSceFios2.prx')
-# Where a dump keeps its modules: Resogun ships only system ones, in sce_module.
+# Where a dump keeps its modules: Tempest ships only system ones, in sce_module.
 MODULE_DIRS = ('sce_module',)
 FS_LOAD = bytes.fromhex('64488b042500000000')  # mov rax, fs:[0]
 MODULE_DEFERRED = 1  # module table flag: started on request, not at boot

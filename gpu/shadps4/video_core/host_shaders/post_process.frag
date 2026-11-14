@@ -39,7 +39,7 @@ vec4 fetch(vec2 at) {
     return c;
 }
 
-// resogun: a frame larger than the output (render_resolution=4k on a smaller screen) is
+// tempest: a frame larger than the output (render_resolution=4k on a smaller screen) is
 // filtered down over each output pixel's whole footprint: a grid of up to 4x4 bilinear taps spread
 // across it, averaged in linear light. One bilinear tap reads only 2x2 texels, so at 4K -> 1440p
 // (1.5 texels per pixel) it skipped texels and edges shimmered. At or below 1:1 it is one tap.

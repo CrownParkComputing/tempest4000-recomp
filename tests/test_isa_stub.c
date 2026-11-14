@@ -379,7 +379,7 @@ static void expect_rejected(const unsigned char *fixture, long size, long at, un
     if (!dir) dir = getenv("TEMP");
     if (!dir) dir = "/tmp";
     char path[512];
-    snprintf(path, sizeof path, "%s/resogun-isa-stub-test.bin", dir);
+    snprintf(path, sizeof path, "%s/tempest-isa-stub-test.bin", dir);
     FILE *f = fopen(path, "wb");
     assert(f != NULL);
     for (long i = 0; i < size; i++) fputc(i == at ? value : fixture[i], f);

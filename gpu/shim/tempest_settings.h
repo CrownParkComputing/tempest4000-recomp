@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// User settings, read once at start from settings.ini (RESOGUN_CONFIG overrides the path) and then
+// User settings, read once at start from settings.ini (TEMPEST_CONFIG overrides the path) and then
 // from environment variables, which win. One "key=value" per line, '#' starts a comment.
 #pragma once
 
@@ -12,12 +12,12 @@
 #include <utility>
 #include <vector>
 
-#include "resogun_graphics.h"
+#include "tempest_graphics.h"
 
-namespace ResogunSettings {
+namespace TempestSettings {
 
 /// Speaker layout the game's 7.1 audio is mixed down to (src/runtime_audio.c): the playback
-/// device's own, stereo, 5.1 or 7.1. settings.ini and RESOGUN_AUDIO_CHANNELS name them as below.
+/// device's own, stereo, 5.1 or 7.1. settings.ini and TEMPEST_AUDIO_CHANNELS name them as below.
 enum AudioChannels : int { AudioChannelsAuto = 0, AudioStereo, Audio51, Audio71, AudioChannelsCount };
 inline constexpr std::string_view AudioChannelKeys[AudioChannelsCount] = {"auto", "stereo", "5.1", "7.1"};
 /// A layout key (also "2.0", "6" and "8"); anything else is automatic.
@@ -62,7 +62,7 @@ inline std::string AspectLabel(int w, int h) {
     return text;
 }
 
-/// The picture's shape (key aspect_ratio, RESOGUN_ASPECT_RATIO): 16:9 (the PS4's, the default),
+/// The picture's shape (key aspect_ratio, TEMPEST_ASPECT_RATIO): 16:9 (the PS4's, the default),
 /// 4:3, 16:10, 21:9 or 32:9. A window takes sizes of that shape; fullscreen picks one from the screen.
 enum AspectRatio : int { Aspect4x3, Aspect16x9, Aspect16x10, Aspect21x9, Aspect32x9, AspectRatioCount };
 inline constexpr std::string_view AspectRatioKeys[AspectRatioCount] = {"4:3", "16:9", "16:10", "21:9", "32:9"};
@@ -114,14 +114,14 @@ inline std::pair<int, int> NearestHeight(const std::vector<std::pair<int, int>>&
 }
 
 struct Values {
-    /// ResogunGraphics::DisplayMode (key display_mode: windowed, borderless, fullscreen);
+    /// TempestGraphics::DisplayMode (key display_mode: windowed, borderless, fullscreen);
     /// borderless by default, so the picture is scaled to the desktop resolution.
-    std::atomic<int> display_mode{ResogunGraphics::Borderless};
+    std::atomic<int> display_mode{TempestGraphics::Borderless};
     std::atomic<bool> vsync{true};
     /// With VSync off: present at once, tearing allowed (Vulkan Immediate), instead of the newest
     /// frame at each refresh (Mailbox, which some drivers hold to twice the refresh rate).
     std::atomic<bool> tearing{false};
-    /// SDL display index the window opens on, -1 the primary (key monitor, RESOGUN_MONITOR).
+    /// SDL display index the window opens on, -1 the primary (key monitor, TEMPEST_MONITOR).
     std::atomic<int> monitor{-1};
     int startup_monitor = -1;
     std::vector<int> monitors; ///< SDL indices, populated before the guest starts
@@ -150,7 +150,7 @@ struct Values {
     /// Back (Circle) on the title screen asks whether to close the game (src/runtime_pad.c and
     /// the overlay's exit prompt); read at each press. On by default.
     std::atomic<bool> title_back_exits{true};
-    /// The game's frame rate: 30, 60, 90, 120, 144 or 180 (ResogunGraphics::FrameRates). The PS4 vblank
+    /// The game's frame rate: 30, 60, 90, 120, 144 or 180 (TempestGraphics::FrameRates). The PS4 vblank
     /// (videoout driver) and the engine's target frame rate (src/runtime_game.c, at each flip)
     /// follow it, so the game speed stays the same; the Display Settings panel changes it live.
     std::atomic<int> frame_rate{60};
@@ -161,9 +161,9 @@ struct Values {
     /// What the Display Settings pages save for the next start.
     std::atomic<int> render_resolution{Render4k};
     /// FSR 1 RCAS sharpening of the picture as the window shows it (key sharpening,
-    /// RESOGUN_SHARPENING; on by default): the presenter reads it at each frame.
+    /// TEMPEST_SHARPENING; on by default): the presenter reads it at each frame.
     std::atomic<bool> sharpening{true};
-    /// HDR output (key hdr, RESOGUN_HDR; off by default): the game is told the display takes
+    /// HDR output (key hdr, TEMPEST_HDR; off by default): the game is told the display takes
     /// BT.2020 PQ and switches its own output to HDR. Read once, before the game starts.
     bool startup_hdr = false;
     std::atomic<bool> hdr{false};
@@ -195,4 +195,4 @@ double DisplayRefresh();
 /// does not skip frames). VSync off with tearing is not bound to the refresh. Any thread.
 int EffectiveFrameRate();
 
-} // namespace ResogunSettings
+} // namespace TempestSettings

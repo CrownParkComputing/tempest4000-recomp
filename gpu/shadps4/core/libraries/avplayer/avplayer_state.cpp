@@ -11,7 +11,7 @@
 #include <cctype>
 #include <magic_enum/magic_enum.hpp>
 
-// resogun: settings.ini skip_intro presses Cross on the title screen, the one that plays
+// tempest: settings.ini skip_intro presses Cross on the title screen, the one that plays
 // video/title.mp4 (src/runtime_pad.c).
 extern "C" void runtime_pad_title_movie(int playing);
 
@@ -201,8 +201,8 @@ bool AvPlayerState::GetStreamInfo(u32 stream_index, AvPlayerStreamInfo& info) {
 }
 
 // Called inside GAME thread (or the controller's autoplay)
-// resogun: the state changes are reported after m_source_mutex is released: the game's event
-// callback calls back into the player (Resogun's asks sceAvPlayerStreamCount on Play), and a
+// tempest: the state changes are reported after m_source_mutex is released: the game's event
+// callback calls back into the player (Tempest's asks sceAvPlayerStreamCount on Play), and a
 // shared lock taken under this thread's unique lock never returns.
 bool AvPlayerState::Start() {
     bool stopped = false;
@@ -253,7 +253,7 @@ bool AvPlayerState::Pause() {
             return false;
         }
     }
-    OnPlaybackStateChanged(AvState::Pause); // resogun: outside the lock, as Start
+    OnPlaybackStateChanged(AvState::Pause); // tempest: outside the lock, as Start
     return true;
 }
 
@@ -268,7 +268,7 @@ bool AvPlayerState::Resume() {
     const auto state = m_previous_state.load();
     SetState(state);
     lock.unlock();
-    OnPlaybackStateChanged(state); // resogun: outside the lock, as Start
+    OnPlaybackStateChanged(state); // tempest: outside the lock, as Start
     return true;
 }
 
@@ -334,7 +334,7 @@ bool AvPlayerState::Stop() {
     return true;
 }
 
-// resogun: Stop with m_source_mutex already held (shared or unique); the caller reports the
+// tempest: Stop with m_source_mutex already held (shared or unique); the caller reports the
 // Stop state change once it has released the lock.
 bool AvPlayerState::StopLocked() {
     if (m_up_source == nullptr || m_current_state == AvState::Stop) {
@@ -403,8 +403,8 @@ bool AvPlayerState::SetLooping(bool is_looping) {
 }
 
 // Called inside GAME thread
-// resogun: the PS4 player reports a finished jump with a WarningId event carrying
-// WAR_JUMP_COMPLETE. Resogun pauses a Music Stage's background movie, jumps to 0 and waits
+// tempest: the PS4 player reports a finished jump with a WarningId event carrying
+// WAR_JUMP_COMPLETE. Tempest pauses a Music Stage's background movie, jumps to 0 and waits
 // for that event before the stage starts. The source is not seeked: the game only jumps to 0
 // right after starting or before restarting, where playback already is at the start.
 bool AvPlayerState::JumpToTime(u64 time) {

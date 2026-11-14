@@ -13,10 +13,10 @@
 #include "core/libraries/videoout/videoout_error.h"
 #include "core/platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
-#include "resogun_overlay.h"
+#include "tempest_overlay.h"
 
 extern std::unique_ptr<Vulkan::Presenter> presenter;
-// resogun: settings.ini frame_rate onto the engine's frame clock, at each flip (src/runtime_game.c).
+// tempest: settings.ini frame_rate onto the engine's frame clock, at each flip (src/runtime_game.c).
 extern "C" void runtime_game_frame_rate(void);
 
 namespace Libraries::VideoOut {
@@ -450,7 +450,7 @@ s32 PS4_SYSV_ABI sceVideoOutConfigureOutputMode_(s32 handle, u32 reserved, const
     default:
         return ORBIS_VIDEO_OUT_ERROR_INVALID_VALUE;
     }
-    // resogun: the game picks HDR here when the capability query offered BT.2020 PQ.
+    // tempest: the game picks HDR here when the capability query offered BT.2020 PQ.
     std::printf("VideoOut: game set output mode %s\n", port->is_hdr ? "HDR (BT.2020 PQ)" : "SDR");
 
     return ORBIS_OK;

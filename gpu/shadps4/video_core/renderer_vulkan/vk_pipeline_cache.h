@@ -57,19 +57,19 @@ struct Program {
 
     Shader::Info info;
     ModuleList modules{};
-    size_t last_used = 0; ///< resogun: permutation of the previous lookup, compared first
-    /// resogun: `info` as translated, for draw-preparation workers (they must not read `info`,
+    size_t last_used = 0; ///< tempest: permutation of the previous lookup, compared first
+    /// tempest: `info` as translated, for draw-preparation workers (they must not read `info`,
     /// whose user data the GPU thread rewrites every draw). Guarded by programs_mutex.
     std::unique_ptr<Shader::Info> info_template;
-    /// resogun: async builds in flight: the initial one alone, then permutations side by side,
+    /// tempest: async builds in flight: the initial one alone, then permutations side by side,
     /// each at its own index.
     boost::container::small_vector<std::shared_ptr<AsyncShaderCompilation>, 2> pending;
     bool compilation_failed = false;
     std::vector<Shader::StageSpecialization> failed_permutations;
-    /// resogun: an async build failed; the next lookup builds it once on the GPU thread.
+    /// tempest: an async build failed; the next lookup builds it once on the GPU thread.
     bool retry_initial = false;
     std::vector<Shader::StageSpecialization> retry_permutations;
-    /// resogun: GPU frame of the first draw skipped because no build could be queued.
+    /// tempest: GPU frame of the first draw skipped because no build could be queued.
     u64 skipped_since = ~u64{};
 
     Program() = default;
@@ -100,7 +100,7 @@ union Regs;
 
 namespace Vulkan {
 
-/// resogun: state of one graphics/compute pipeline selection. The GPU thread owns one
+/// tempest: state of one graphics/compute pipeline selection. The GPU thread owns one
 /// (PipelineCache::sel); draw-preparation workers use their own with their register copies.
 struct PipelineSelection {
     const AmdGpu::Regs* regs{};
@@ -114,7 +114,7 @@ struct PipelineSelection {
     struct PrepWorker* worker{}; ///< set: read-only selection for a draw-preparation worker
 };
 
-/// resogun: a draw-preparation worker's own program state (see vk_draw_prep.h).
+/// tempest: a draw-preparation worker's own program state (see vk_draw_prep.h).
 struct PrepWorker {
     struct Stage {
         const Program* program;
@@ -137,10 +137,10 @@ public:
                            AmdGpu::Liverpool* liverpool, u32 sparse_page_shift);
     ~PipelineCache();
 
-    /// Loads the pipelines of earlier sessions. resogun: called by the presenter once the window
+    /// Loads the pipelines of earlier sessions. tempest: called by the presenter once the window
     /// can show a loading screen; `progress(done, total)` follows the pipelines read.
     void WarmUp(const std::function<void(u32 done, u32 total)>& progress = {});
-    /// resogun: the same load on low-priority threads while the game runs; the GPU thread takes
+    /// tempest: the same load on low-priority threads while the game runs; the GPU thread takes
     /// the results a few at a time (PumpWarmUp). False when it cannot (zip archive store).
     bool StartBackgroundWarmUp();
     void StartOnDemand();
@@ -151,26 +151,26 @@ public:
     bool LoadGraphicsPipeline(Serialization::Archive& ar);
     bool LoadPipelineStage(Serialization::Archive& ar, size_t stage);
 
-    /// resogun: with `no_skip` the draw waits for a pipeline still building instead of being
+    /// tempest: with `no_skip` the draw waits for a pipeline still building instead of being
     /// skipped.
     const GraphicsPipeline* GetGraphicsPipeline(const DrawIndirectParams params = {},
                                                 const PreparedDraw* prepared = nullptr,
                                                 bool no_skip = false);
 
-    /// resogun: worker side of draw preparation: selects the pipeline key for `sel.regs` without
+    /// tempest: worker side of draw preparation: selects the pipeline key for `sel.regs` without
     /// creating anything. False when a program or permutation does not exist yet.
     bool PrepareGraphicsPipeline(PipelineSelection& sel);
 
-    /// resogun: GPU-thread side: the pipeline for a prepared draw after checking that registers
+    /// tempest: GPU-thread side: the pipeline for a prepared draw after checking that registers
     /// and flattened user data match; null to take the regular path.
     const GraphicsPipeline* TryPreparedPipeline(const PreparedDraw& prepared);
 
-    /// resogun: the prepared draw the last GetGraphicsPipeline used, or null (regular path).
+    /// tempest: the prepared draw the last GetGraphicsPipeline used, or null (regular path).
     [[nodiscard]] const PreparedDraw* UsedPrepared() const noexcept {
         return used_prepared;
     }
 
-    /// resogun: why the last GetGraphicsPipeline returned null (frame capture).
+    /// tempest: why the last GetGraphicsPipeline returned null (frame capture).
     [[nodiscard]] const char* MissReason() const noexcept {
         return miss_reason;
     }
@@ -199,7 +199,7 @@ private:
                      std::optional<Shader::StageSpecialization> specialization = {});
     void PublishShaders(bool wait = false);
     void PublishGraphics(bool wait = false);
-    /// resogun: true when the GPU thread is to stop skipping draws that need `build` of
+    /// tempest: true when the GPU thread is to stop skipping draws that need `build` of
     /// `program` (null: none could be queued): it then waits for the build and publishes it.
     bool BuildNow(Program& program, AsyncShaderCompilation* build);
     void FinishCompilations();
@@ -243,16 +243,16 @@ private:
     std::unique_ptr<AsyncCompiler> compiler, capture_compiler;
     std::vector<vk::UniquePipelineCache> worker_pipeline_caches;
     bool worker_caches_seeded = false;
-    /// resogun: RESOGUN_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
+    /// tempest: TEMPEST_PARALLEL_WARMUP: WarmUp builds the cached pipelines on these threads.
     struct WarmupPool;
     WarmupPool* warmup_pool = nullptr;
     std::mutex warmup_results_mutex;
     std::vector<std::pair<GraphicsPipelineKey, std::unique_ptr<GraphicsPipeline>>> warmup_graphics;
     std::vector<std::pair<ComputePipelineKey, std::unique_ptr<ComputePipeline>>> warmup_compute;
-    /// resogun: StartBackgroundWarmUp state; owned here, deleted by StopWarmUp.
+    /// tempest: StartBackgroundWarmUp state; owned here, deleted by StopWarmUp.
     BackgroundWarmup* background = nullptr;
     tsl::robin_map<GraphicsPipelineKey, std::shared_ptr<AsyncGraphicsCompilation>> pending_graphics;
-    /// resogun: graphics keys whose draws are skipped: GPU frame of the first skip, and
+    /// tempest: graphics keys whose draws are skipped: GPU frame of the first skip, and
     /// failures (1: the async build failed, the next draw builds it here; 2: that failed too).
     struct GraphicsMiss {
         u64 since = ~u64{};
@@ -261,7 +261,7 @@ private:
     tsl::robin_map<GraphicsPipelineKey, GraphicsMiss> graphics_misses;
     tsl::robin_map<size_t, std::unique_ptr<Program>> program_cache;
     std::vector<std::shared_ptr<AsyncShaderCompilation>> pending_shaders;
-    /// resogun: exclusive for program/permutation insertions, shared for worker lookups.
+    /// tempest: exclusive for program/permutation insertions, shared for worker lookups.
     std::shared_mutex programs_mutex;
     u64 prepared_hits = 0, prepared_misses = 0;
     const PreparedDraw* used_prepared = nullptr;
@@ -271,7 +271,7 @@ private:
     PipelineSelection sel{}; ///< GPU thread selection state
     ComputePipelineKey compute_key{};
     u32 num_new_pipelines{}; // new pipelines added to the cache since the game start
-    /// resogun (ResogunToggle::DiskShaders): with on-demand startup, a program missing from
+    /// tempest (TempestToggle::DiskShaders): with on-demand startup, a program missing from
     /// program_cache is first read from the store at its saved permutation indices, instead of
     /// being translated again (pop-in) and rewritten (antivirus scans every file).
     bool disk_shaders = false;
@@ -299,7 +299,7 @@ private:
     /// False when this pipeline key is already in the store (nothing to write).
     bool NewPipelineKey(const std::string& name);
     void ReportDiskShaders();
-    /// resogun: shader translations started (async and on the GPU thread), for the corner note.
+    /// tempest: shader translations started (async and on the GPU thread), for the corner note.
     u64 compiles_started = 0, compiles_reported = 0;
     u64 build_waits = 0, build_waits_reported = 0; ///< BuildNow and graphics waits
     u32 pending_reported = 0;

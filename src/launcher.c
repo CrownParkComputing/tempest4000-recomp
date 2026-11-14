@@ -1,5 +1,5 @@
 /* Double-click start (Windows Explorer, a Linux file manager or menu entry, a shortcut). A release
- * folder (tools/package.py) holds this exe, its libraries, release.txt and resogun-setup; the
+ * folder (tools/package.py) holds this exe, its libraries, release.txt and tempest-setup; the
  * setup adds the prepared game image in game/, the shaders/ folder (the shader cache),
  * settings.ini and paths.ini:
  *     [paths]
@@ -20,7 +20,7 @@
 #include <windows.h>
 #define PATH_CHARS (MAX_PATH * 4)
 #define SEP "\\"
-#define SETUP "resogun-setup.exe"
+#define SETUP "tempest-setup.exe"
 #define strcasecmp _stricmp
 #else
 #include <errno.h>
@@ -33,10 +33,10 @@
 #include <SDL3/SDL.h>
 #define PATH_CHARS 4096
 #define SEP "/"
-#define SETUP "resogun-setup"
+#define SETUP "tempest-setup"
 #endif
 
-#define TITLE "Resogun"
+#define TITLE "Tempest"
 #define RUN_SETUP "Run " SETUP " (in the game's folder) to set the game up."
 
 static char exe_dir[PATH_CHARS], game[PATH_CHARS], save[PATH_CHARS], cache[PATH_CHARS], dlc[PATH_CHARS];
@@ -81,27 +81,27 @@ static void set_path(char *out, const char *value) {
 static void shared_cache(char *out) {
 #ifdef _WIN32
     const char *local = getenv("LOCALAPPDATA");
-    if (local && local[0]) snprintf(out, PATH_CHARS, "%s\\Resogun", local);
+    if (local && local[0]) snprintf(out, PATH_CHARS, "%s\\Tempest", local);
 #else
     const char *xdg = getenv("XDG_CACHE_HOME"), *home = getenv("HOME");
-    if (xdg && xdg[0]) snprintf(out, PATH_CHARS, "%s/resogun", xdg);
-    else if (home && home[0]) snprintf(out, PATH_CHARS, "%s/.cache/resogun", home);
+    if (xdg && xdg[0]) snprintf(out, PATH_CHARS, "%s/tempest", xdg);
+    else if (home && home[0]) snprintf(out, PATH_CHARS, "%s/.cache/tempest", home);
 #endif
     else snprintf(out, PATH_CHARS, "%s" SEP "cache", exe_dir);
 }
 
 /* The per-user copy of paths.ini the setup also writes, so a release unpacked into a new folder
- * finds the folders the last setup chose: %APPDATA%\Resogun\paths.ini, or
- * $XDG_CONFIG_HOME/resogun/paths.ini (~/.config when unset). "" when neither is known. */
+ * finds the folders the last setup chose: %APPDATA%\Tempest\paths.ini, or
+ * $XDG_CONFIG_HOME/tempest/paths.ini (~/.config when unset). "" when neither is known. */
 static void user_paths_ini(char *out) {
     out[0] = 0;
 #ifdef _WIN32
     const char *appdata = getenv("APPDATA");
-    if (appdata && appdata[0]) snprintf(out, PATH_CHARS, "%s\\Resogun\\paths.ini", appdata);
+    if (appdata && appdata[0]) snprintf(out, PATH_CHARS, "%s\\Tempest\\paths.ini", appdata);
 #else
     const char *xdg = getenv("XDG_CONFIG_HOME"), *home = getenv("HOME");
-    if (xdg && xdg[0]) snprintf(out, PATH_CHARS, "%s/resogun/paths.ini", xdg);
-    else if (home && home[0]) snprintf(out, PATH_CHARS, "%s/.config/resogun/paths.ini", home);
+    if (xdg && xdg[0]) snprintf(out, PATH_CHARS, "%s/tempest/paths.ini", xdg);
+    else if (home && home[0]) snprintf(out, PATH_CHARS, "%s/.config/tempest/paths.ini", home);
 #endif
 }
 
@@ -181,7 +181,7 @@ static void set_env(const char *name, const char *value) {
 #endif
 }
 
-/* The crash watch (RESOGUN_CRASH_WATCH, on unless 0): an unattended start runs the game as a
+/* The crash watch (TEMPEST_CRASH_WATCH, on unless 0): an unattended start runs the game as a
  * child of this process and waits for it. Whatever ends the game with an exit code other than 0 (a
  * fault the runtime reports, an error exit, or an end no handler sees: a fast fail, abort(), a
  * driver ending the process) is added to the log, the log is kept as log/crash-<time>.log and the
@@ -280,17 +280,17 @@ static int watch_game(unsigned long *code) {
     JOBOBJECT_ASSOCIATE_COMPLETION_PORT link = {.CompletionKey = job, .CompletionPort = port};
     if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof limits) ||
         !SetInformationJobObject(job, JobObjectAssociateCompletionPortInformation, &link, sizeof link)) return 0;
-    _putenv_s("RESOGUN_CRASH_WATCH", "0");
+    _putenv_s("TEMPEST_CRASH_WATCH", "0");
     STARTUPINFOW startup = {.cb = sizeof startup};
     PROCESS_INFORMATION child;
     wchar_t *line = _wcsdup(GetCommandLineW());
     if (!line || !CreateProcessW(NULL, line, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &startup, &child)) {
-        _putenv_s("RESOGUN_CRASH_WATCH", "");
+        _putenv_s("TEMPEST_CRASH_WATCH", "");
         return 0;
     }
     if (!AssignProcessToJobObject(job, child.hProcess)) {
         TerminateProcess(child.hProcess, 0);
-        _putenv_s("RESOGUN_CRASH_WATCH", "");
+        _putenv_s("TEMPEST_CRASH_WATCH", "");
         return 0;
     }
     AllowSetForegroundWindow(child.dwProcessId);
@@ -314,9 +314,9 @@ static int watch_game(unsigned long *code) {
     return 1;
 #else
     /* The child returns to run the game and ends with this process (a restart execs in place). */
-    setenv("RESOGUN_CRASH_WATCH", "0", 1);
+    setenv("TEMPEST_CRASH_WATCH", "0", 1);
     pid_t pid = fork();
-    if (pid < 0) unsetenv("RESOGUN_CRASH_WATCH");
+    if (pid < 0) unsetenv("TEMPEST_CRASH_WATCH");
     if (pid <= 0) {
         if (!pid) prctl(PR_SET_PDEATHSIG, SIGTERM);
         return 0;
@@ -354,7 +354,7 @@ int launch_from_paths_ini(int *argc, char ***argv) {
     unattended = !isatty(STDOUT_FILENO) && !isatty(STDERR_FILENO);
 #endif
     if (!find_exe_dir()) {
-        complain("Cannot find the folder of resogun.");
+        complain("Cannot find the folder of tempest.");
         return 1;
     }
 
@@ -367,11 +367,11 @@ int launch_from_paths_ini(int *argc, char ***argv) {
             return 1;
         }
     }
-    /* RESOGUN_SAVE_DIR overrides save= (a relative one is relative to the exe's folder). */
-    const char *save_override = getenv("RESOGUN_SAVE_DIR");
+    /* TEMPEST_SAVE_DIR overrides save= (a relative one is relative to the exe's folder). */
+    const char *save_override = getenv("TEMPEST_SAVE_DIR");
     if (save_override && save_override[0]) set_path(save, save_override);
-    /* RESOGUN_DLC_DIR overrides dlc= the same way. */
-    const char *dlc_override = getenv("RESOGUN_DLC_DIR");
+    /* TEMPEST_DLC_DIR overrides dlc= the same way. */
+    const char *dlc_override = getenv("TEMPEST_DLC_DIR");
     if (dlc_override && dlc_override[0]) set_path(dlc, dlc_override);
     snprintf(boot, sizeof boot, "%s" SEP "game" SEP "boot-linked.bin", exe_dir);
     snprintf(profile, sizeof profile, "%s" SEP "game" SEP "content.bin", exe_dir);
@@ -403,8 +403,8 @@ int launch_from_paths_ini(int *argc, char ***argv) {
     if (unattended && !console) {
         char log_dir[PATH_CHARS];
         snprintf(log_dir, sizeof log_dir, "%s" SEP "log", save);
-        snprintf(log_path, sizeof log_path, "%s" SEP "resogun.log", log_dir);
-        const char *watch = getenv("RESOGUN_CRASH_WATCH");
+        snprintf(log_path, sizeof log_path, "%s" SEP "tempest.log", log_dir);
+        const char *watch = getenv("TEMPEST_CRASH_WATCH");
         unsigned long code = 0;
         if ((!watch || strcmp(watch, "0")) && watch_game(&code)) {
             if (!quiet_exit(code)) report_crash(log_dir, code);
@@ -426,15 +426,15 @@ int launch_from_paths_ini(int *argc, char ***argv) {
     char config[PATH_CHARS], config_default[PATH_CHARS];
     snprintf(config, sizeof config, "%s" SEP "settings.ini", save);
     snprintf(config_default, sizeof config_default, "%s" SEP "settings.ini", exe_dir);
-    set_env("RESOGUN_CONFIG", config);
-    set_env("RESOGUN_CONFIG_DEFAULT", config_default);
+    set_env("TEMPEST_CONFIG", config);
+    set_env("TEMPEST_CONFIG_DEFAULT", config_default);
     /* Before anything asks the GPU library for its folders (shadps4 common/path_util.cpp). */
-    set_env("RESOGUN_GPU_USER_DIR", cache);
+    set_env("TEMPEST_GPU_USER_DIR", cache);
     /* The shader cache: shaders/ next to this exe (the GPU library moves an older one in). */
     char shaders[PATH_CHARS];
     snprintf(shaders, sizeof shaders, "%s" SEP "shaders", exe_dir);
     make_dirs(shaders);
-    set_env("RESOGUN_SHADER_DIR", shaders);
+    set_env("TEMPEST_SHADER_DIR", shaders);
 
     int count = 0;
     args[count++] = (*argv)[0];

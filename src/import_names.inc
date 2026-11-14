@@ -778,7 +778,7 @@
 {"tIYf0W5VTi8#libSceScreenShot","sceScreenShotDisable"},
 {"2xxUtuC-RzE#libSceScreenShot","sceScreenShotEnable"},
 {"ahHhOf+QNkQ#libSceScreenShot","sceScreenShotSetOverlayImage"},
-/* Tempest 4000 (CUSA09856): imports Resogun does not make. */
+/* Tempest 4000 (CUSA09856): imports Tempest does not make. */
 {"7uhBFWRAS60#libkernel","sceKernelClearEventFlag"},
 {"NcaWUxfMNIQ#libkernel","sceKernelMapNamedDirectMemory"},
 {"NhpspxdjEKU#libkernel","_nanosleep"},

@@ -83,11 +83,11 @@ struct Rack { uint32_t magic; void *system; struct Rack *next; uint32_t voice_co
 typedef struct { uint32_t magic; Rack *racks; } System;
 
 static size_t systems, racks, voices_handed, renders, rendered_bytes, decoded_frames, mixed_voices;
-/* RESOGUN_NGS2_TRACE=1 logs every call and what it answered: Scream's own error messages name
+/* TEMPEST_NGS2_TRACE=1 logs every call and what it answered: Scream's own error messages name
  * only its source line, so the call that upset it has to be found from this side. */
 static int tracing(void) {
     static int on=-1;
-    if (on<0) { const char *v=getenv("RESOGUN_NGS2_TRACE"); on = v ? atoi(v) : 0; }
+    if (on<0) { const char *v=getenv("TEMPEST_NGS2_TRACE"); on = v ? atoi(v) : 0; }
     return on;
 }
 #define TRACE(...) do { if (tracing()) fprintf(stderr,"NGS2: " __VA_ARGS__); } while (0)
@@ -309,7 +309,7 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
         default: break;
         }
         /* Until every parameter's shape is known, the raw bytes of the ones that matter are
-         * the only reliable source: RESOGUN_NGS2_TRACE=2 dumps them. */
+         * the only reliable source: TEMPEST_NGS2_TRACE=2 dumps them. */
         if (tracing() > 1) {
             unsigned shown = h->size > 192 ? 192 : h->size;
             fprintf(stderr,"NGS2:   raw id=0x%08x size=%u next=%d:", h->id, h->size, h->next);

@@ -1,4 +1,4 @@
-// resogun: shadPS4 settings used by the video core, read once from RESOGUN_* environment
+// tempest: shadPS4 settings used by the video core, read once from TEMPEST_* environment
 // variables (defaults match shadPS4 except the pipeline cache, which is on).
 #pragma once
 #include <algorithm>
@@ -8,13 +8,13 @@
 #include <string>
 #include "common/types.h"
 
-double ResogunWindowRefreshRate(); // resogun_gpu.cpp: exact rate of the window's display, 0 when unknown
-bool ResogunWaitForVblank(); // resogun_gpu.cpp: waits for the window's display to start a refresh; false when it cannot (not Windows)
-extern "C" int resogun_render_4k(void); // resogun_settings.cpp: render_resolution=4k
-extern "C" int resogun_width_4k(void);  // resogun_settings.cpp: the display width at 2160 lines
-inline bool ResogunRender4k() { return resogun_render_4k() != 0; }
-extern "C" int resogun_hdr(void); // resogun_settings.cpp: settings.ini hdr
-extern "C" int resogun_frame_rate(void); // resogun_settings.cpp: frame_rate (30, 60, 90, 120, 144, 180)
+double TempestWindowRefreshRate(); // tempest_gpu.cpp: exact rate of the window's display, 0 when unknown
+bool TempestWaitForVblank(); // tempest_gpu.cpp: waits for the window's display to start a refresh; false when it cannot (not Windows)
+extern "C" int tempest_render_4k(void); // tempest_settings.cpp: render_resolution=4k
+extern "C" int tempest_width_4k(void);  // tempest_settings.cpp: the display width at 2160 lines
+inline bool TempestRender4k() { return tempest_render_4k() != 0; }
+extern "C" int tempest_hdr(void); // tempest_settings.cpp: settings.ini hdr
+extern "C" int tempest_frame_rate(void); // tempest_settings.cpp: frame_rate (30, 60, 90, 120, 144, 180)
 
 enum GpuReadbacksMode : int { Disabled, Relaxed, Precise };
 
@@ -29,55 +29,55 @@ public:
         const char* v = std::getenv(name);
         return v ? std::strtol(v, nullptr, 10) : fallback;
     }
-    s32 GetGpuId() { static const auto value = s32(Number("RESOGUN_GPU_ID", -1)); return value; }
-    // resogun: the video out size, 3840x2160 with render_resolution=4k (resogun_render_4k), half
-    // with 1080p; scaled for the output ratio (resogun_width_4k: 3456 at 16:10, 5120 at 21:9).
+    s32 GetGpuId() { static const auto value = s32(Number("TEMPEST_GPU_ID", -1)); return value; }
+    // tempest: the video out size, 3840x2160 with render_resolution=4k (tempest_render_4k), half
+    // with 1080p; scaled for the output ratio (tempest_width_4k: 3456 at 16:10, 5120 at 21:9).
     // The engine takes its aspect ratio from it.
-    u32 GetInternalScreenWidth() { static const auto value = u32(Number("RESOGUN_INTERNAL_WIDTH", ResogunRender4k() ? resogun_width_4k() : resogun_width_4k() / 2)); return value; }
-    u32 GetInternalScreenHeight() { static const auto value = u32(Number("RESOGUN_INTERNAL_HEIGHT", ResogunRender4k() ? 2160 : 1080)); return value; }
-    // resogun: Relaxed by default: without readbacks, guest code that reads GPU-written
+    u32 GetInternalScreenWidth() { static const auto value = u32(Number("TEMPEST_INTERNAL_WIDTH", TempestRender4k() ? tempest_width_4k() : tempest_width_4k() / 2)); return value; }
+    u32 GetInternalScreenHeight() { static const auto value = u32(Number("TEMPEST_INTERNAL_HEIGHT", TempestRender4k() ? 2160 : 1080)); return value; }
+    // tempest: Relaxed by default: without readbacks, guest code that reads GPU-written
     // vertices sees stale data; Relaxed costs no measurable frame rate.
-    u32 GetReadbacksMode() { static const auto value = u32(Number("RESOGUN_READBACKS", GpuReadbacksMode::Relaxed)); return value; }
-    // resogun: the vblank runs at settings.ini frame_rate, read at each call (the Display
+    u32 GetReadbacksMode() { static const auto value = u32(Number("TEMPEST_READBACKS", GpuReadbacksMode::Relaxed)); return value; }
+    // tempest: the vblank runs at settings.ini frame_rate, read at each call (the Display
     // Settings panel changes it): the game waits for one vblank a frame. At 30 it stays 60: an
     // engine target of 30 makes the game set a flip rate of 1 (a flip every second vblank), as
-    // the PS4's 30 FPS games do, so a 30 Hz vblank ran it at 15. RESOGUN_VBLANK_HZ fixes it
+    // the PS4's 30 FPS games do, so a 30 Hz vblank ran it at 15. TEMPEST_VBLANK_HZ fixes it
     // (measurements).
     u32 GetVblankFrequency() {
-        static const long fixed = Number("RESOGUN_VBLANK_HZ", -1);
-        return fixed > 0 ? u32(fixed) : u32(std::max(resogun_frame_rate(), 60));
+        static const long fixed = Number("TEMPEST_VBLANK_HZ", -1);
+        return fixed > 0 ? u32(fixed) : u32(std::max(tempest_frame_rate(), 60));
     }
     // The vblank period. A display within 0.5 Hz of the vblank rate (a 59.95 Hz panel at the
     // default 60) sets it exactly: at 60.00 Hz the game made 0.05 frames a second more than the
     // display shows, so after ~35 s the VSync (Fifo) queue was full and the GPU thread waited on
     // the display for 4.9 s of every 5 (frames of extra latency, 33 ms frames). The display is
-    // the one the window opened on. An explicit RESOGUN_VBLANK_HZ is used as given.
+    // the one the window opened on. An explicit TEMPEST_VBLANK_HZ is used as given.
     std::chrono::nanoseconds GetVblankPeriod() {
-        static const bool snap = std::getenv("RESOGUN_VBLANK_HZ") == nullptr;
+        static const bool snap = std::getenv("TEMPEST_VBLANK_HZ") == nullptr;
         return DisplayPeriod(GetVblankFrequency(), snap);
     }
     static std::chrono::nanoseconds DisplayPeriod(double hz, bool snap) {
-        static const double display = ResogunWindowRefreshRate();
+        static const double display = TempestWindowRefreshRate();
         return std::chrono::nanoseconds(s64(1e9 / (snap && std::abs(display - hz) < 0.5 ? display : hz) + 0.5));
     }
-    bool IsCopyGpuBuffers() { static const auto value = Flag("RESOGUN_COPY_GPU_BUFFERS", false); return value; }
-    bool IsDirectMemoryAccessEnabled() { static const auto value = Flag("RESOGUN_DIRECT_MEMORY_ACCESS", false); return value; }
-    bool IsDumpShaders() { static const auto value = Flag("RESOGUN_DUMP_SHADERS", false); return value; }
-    // resogun: settings.ini hdr (RESOGUN_HDR), read once at start (resogun_hdr).
-    bool IsHdrAllowed() { static const bool value = resogun_hdr() != 0; return value; }
-    bool IsNullGPU() { static const auto value = Flag("RESOGUN_NULL_GPU", false); return value; }
+    bool IsCopyGpuBuffers() { static const auto value = Flag("TEMPEST_COPY_GPU_BUFFERS", false); return value; }
+    bool IsDirectMemoryAccessEnabled() { static const auto value = Flag("TEMPEST_DIRECT_MEMORY_ACCESS", false); return value; }
+    bool IsDumpShaders() { static const auto value = Flag("TEMPEST_DUMP_SHADERS", false); return value; }
+    // tempest: settings.ini hdr (TEMPEST_HDR), read once at start (tempest_hdr).
+    bool IsHdrAllowed() { static const bool value = tempest_hdr() != 0; return value; }
+    bool IsNullGPU() { static const auto value = Flag("TEMPEST_NULL_GPU", false); return value; }
     bool IsPatchShaders() { return false; }
     bool IsPipelineCacheArchived() { return false; }
-    bool IsPipelineCacheEnabled() { static const auto value = Flag("RESOGUN_PIPELINE_CACHE", true); return value; }
-    bool IsReadbackLinearImagesEnabled() { static const auto value = Flag("RESOGUN_READBACK_LINEAR", false); return value; }
+    bool IsPipelineCacheEnabled() { static const auto value = Flag("TEMPEST_PIPELINE_CACHE", true); return value; }
+    bool IsReadbackLinearImagesEnabled() { static const auto value = Flag("TEMPEST_READBACK_LINEAR", false); return value; }
     bool IsRenderdocEnabled() { return false; }
     bool IsShaderCollect() { return false; }
     bool IsVkCrashDiagnosticEnabled() { return false; }
-    bool IsVkGuestMarkersEnabled() { static const auto value = Flag("RESOGUN_VK_MARKERS", false); return value; }
-    bool IsVkHostMarkersEnabled() { static const auto value = Flag("RESOGUN_VK_MARKERS", false); return value; }
+    bool IsVkGuestMarkersEnabled() { static const auto value = Flag("TEMPEST_VK_MARKERS", false); return value; }
+    bool IsVkHostMarkersEnabled() { static const auto value = Flag("TEMPEST_VK_MARKERS", false); return value; }
     bool IsVkValidationCoreEnabled() { return true; }
-    bool IsVkValidationEnabled() { static const auto value = Flag("RESOGUN_VK_VALIDATION", false); return value; }
+    bool IsVkValidationEnabled() { static const auto value = Flag("TEMPEST_VK_VALIDATION", false); return value; }
     bool IsVkValidationGpuEnabled() { return false; }
-    bool IsVkValidationSyncEnabled() { static const auto value = Flag("RESOGUN_VK_VALIDATION_SYNC", false); return value; }
+    bool IsVkValidationSyncEnabled() { static const auto value = Flag("TEMPEST_VK_VALIDATION_SYNC", false); return value; }
 };
 #define EmulatorSettings (*EmulatorSettingsImpl::GetInstance())

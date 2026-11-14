@@ -33,7 +33,7 @@ std::optional<std::vector<Binary>> Decode(std::span<const u8> bytes, const Key& 
 bool Save(const std::filesystem::path& file, std::span<const u8> bytes);
 std::optional<std::vector<Binary>> Load(const std::filesystem::path& file, const Key& global,
                                         const Key& pipeline, u64 graphics_hash);
-/// resogun: version 2, the binary keys and content hashes only; the data is in SharedPath files
+/// tempest: version 2, the binary keys and content hashes only; the data is in SharedPath files
 /// (StoreShared). The driver reuses a binary key for different data, so files are named by content.
 std::vector<u8> EncodeShared(const Key& global, const Key& pipeline, u64 graphics_hash,
                              const std::vector<Binary>& binaries);
@@ -41,7 +41,7 @@ std::filesystem::path SharedPath(const std::filesystem::path& directory, const K
                                  const Key& binary, u64 content);
 bool StoreShared(const std::filesystem::path& file, const Key& global, const Key& pipeline,
                  u64 graphics_hash, const std::vector<Binary>& binaries);
-/// StoreShared, or the version 1 file with ResogunToggle::SharedBinaries off.
+/// StoreShared, or the version 1 file with TempestToggle::SharedBinaries off.
 bool Store(const std::filesystem::path& file, const Key& global, const Key& pipeline,
            u64 graphics_hash, const std::vector<Binary>& binaries);
 /// Rewrites every version 1 file of `directory` as version 2: {files, bytes freed}.

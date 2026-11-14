@@ -1,6 +1,6 @@
-// resogun: shadPS4 registers HLE functions with LIB_FUNCTION(nid, library,
+// tempest: shadPS4 registers HLE functions with LIB_FUNCTION(nid, library,
 // version, module, fn). Here the registrations fill a table that the C
-// loader queries by NID (see resogun_gpu.cpp: resogun_gpu_resolve).
+// loader queries by NID (see tempest_gpu.cpp: tempest_gpu_resolve).
 #pragma once
 #include <string>
 #include "common/types.h"

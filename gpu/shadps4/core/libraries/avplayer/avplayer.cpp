@@ -234,7 +234,7 @@ s32 PS4_SYSV_ABI sceAvPlayerStop(AvPlayerHandle handle) {
     if (handle == nullptr) {
         return ORBIS_AVPLAYER_ERROR_INVALID_PARAMS;
     }
-    // resogun: guest code calls this and cannot unwind a C++ exception.
+    // tempest: guest code calls this and cannot unwind a C++ exception.
     try {
         return handle->Stop();
     } catch (const std::exception& error) {

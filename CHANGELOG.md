@@ -52,4 +52,4 @@ text as a break.
 
 ## v0.1
 
-- First release: Resogun (PS4, CUSA00038 v1.10) running natively on Windows and Linux.
+- First release: Tempest (PS4, CUSA00038 v1.10) running natively on Windows and Linux.

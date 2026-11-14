@@ -72,8 +72,8 @@ struct ImageInfo {
     Extent3D size{1, 1, 1};
     u32 num_bits{};
     u32 num_samples = 1;
-    /// resogun: the guest's sample count, for sizes in guest memory (RESOGUN_NO_MSAA makes
-    /// num_samples 1; see video_core/amdgpu/resogun_msaa.h).
+    /// tempest: the guest's sample count, for sizes in guest memory (TEMPEST_NO_MSAA makes
+    /// num_samples 1; see video_core/amdgpu/tempest_msaa.h).
     u32 guest_samples = 1;
     u32 pitch{};
     AmdGpu::TileMode tile_mode = AmdGpu::TileMode::DisplayLinearAligned;

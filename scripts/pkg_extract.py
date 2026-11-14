@@ -520,7 +520,7 @@ def extract(pkg_path, out_path, xts_tool):
     out_path = Path(out_path)
     out_path.mkdir(parents=True, exist_ok=True)
     # The decrypted image is big (the size of the game), so it goes next to the files.
-    handle, work = tempfile.mkstemp(prefix='resogun-pfs-', suffix='.tmp', dir=str(out_path.parent))
+    handle, work = tempfile.mkstemp(prefix='tempest-pfs-', suffix='.tmp', dir=str(out_path.parent))
     os.close(handle)
     try:
         decrypt_image(pkg, out_path, xts_tool, work)

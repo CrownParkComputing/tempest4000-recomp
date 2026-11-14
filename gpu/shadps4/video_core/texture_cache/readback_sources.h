@@ -10,8 +10,8 @@
 
 namespace VideoCore {
 
-// resogun: who asked for a pending image readback to reach RAM. Only used by the
-// RESOGUN_PERF_DIAG report, to find the consumer behind the remaining readback waits.
+// tempest: who asked for a pending image readback to reach RAM. Only used by the
+// TEMPEST_PERF_DIAG report, to find the consumer behind the remaining readback waits.
 enum class ReadbackSource : std::uint8_t {
     Unknown,
     BufferObtain,

@@ -12,8 +12,8 @@
 #endif
 #include "../src/runtime_game.c"
 
-int resogun_frame_rate(void) { return 60; }
-void resogun_set_frame_rate(int rate) { (void)rate; }
+int tempest_frame_rate(void) { return 60; }
+void tempest_set_frame_rate(int rate) { (void)rate; }
 int runtime_verbose(void) { return 0; }
 void *runtime_low_map(size_t size, int prot) {
     (void)prot;

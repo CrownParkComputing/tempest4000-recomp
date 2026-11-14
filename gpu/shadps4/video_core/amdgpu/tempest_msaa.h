@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// resogun: guest multisampled images created and sampled as single-sampled ones.
+// tempest: guest multisampled images created and sampled as single-sampled ones.
 //
 // A game that draws with one color fragment and two depth samples, and whose shaders fetch
 // that depth buffer (D32S8, 2 samples) as a multisampled texture. On the RX 6600 with AMD's
@@ -10,7 +10,7 @@
 // instead: the depth test and the shaders then use the same single-sampled buffer. Guest
 // sizes and addresses still use the real sample count (GuestNumSamples).
 //
-// On with AMD's and Intel's Windows drivers (resogun_msaa_default.h); RESOGUN_NO_MSAA=0 or 1 decides
+// On with AMD's and Intel's Windows drivers (tempest_msaa_default.h); TEMPEST_NO_MSAA=0 or 1 decides
 // otherwise (vk_instance.cpp).
 
 #pragma once

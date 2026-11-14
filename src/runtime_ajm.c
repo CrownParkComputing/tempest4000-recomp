@@ -1,5 +1,5 @@
 /* libSceAjm: the audio decoder service. Wwise initializes it and registers its codecs, but
- * Resogun's sounds are all Wwise ADPCM and Vorbis (audio.pck), decoded on the CPU: no decoder
+ * Tempest's sounds are all Wwise ADPCM and Vorbis (audio.pck), decoded on the CPU: no decoder
  * instance is ever created, so contexts and codec registration are kept and an instance stops
  * the run, naming the codec. */
 #include "runtime.h"
@@ -26,7 +26,7 @@ static ABI int32_t ajm_initialize(int64_t reserved, uint32_t *out) {
     pthread_mutex_lock(&lock);
     for (uint32_t i=1;i<=MAX_CONTEXTS;++i) if (!contexts[i][0]) {
         contexts[i][0]=1; pthread_mutex_unlock(&lock);
-        *out=i; puts("Runtime: Ajm context initialized (no decoders: Resogun's audio is Wwise ADPCM and Vorbis)");
+        *out=i; puts("Runtime: Ajm context initialized (no decoders: Tempest's audio is Wwise ADPCM and Vorbis)");
         return 0;
     }
     pthread_mutex_unlock(&lock);

@@ -60,7 +60,7 @@ typedef struct GuestThread {
     HANDLE os_handle; /* own duplicate: winpthreads closes a detached thread's handle */
 #endif
 #ifdef _WIN32
-    resogun_jmp_buf exit_jump; /* no SEH unwinding through guest frames */
+    tempest_jmp_buf exit_jump; /* no SEH unwinding through guest frames */
 #else
     jmp_buf exit_jump;
 #endif
@@ -74,7 +74,7 @@ static _Thread_local GuestThread *current;
 
 static int slow_wait_ms(void) {
     static int threshold_ms=-1;
-    if (threshold_ms<0) { const char *e=getenv("RESOGUN_SLOW_WAITS"); threshold_ms=e ? atoi(e) : 0; }
+    if (threshold_ms<0) { const char *e=getenv("TEMPEST_SLOW_WAITS"); threshold_ms=e ? atoi(e) : 0; }
     return threshold_ms;
 }
 uint64_t runtime_wait_begin(void) {
@@ -200,11 +200,11 @@ void runtime_thread_set_stack(void *low,uint64_t size) {
 }
 /* Records are never removed (games create threads again during every load), so a found
  * thread moves to the front: the threads the game asks about (priorities, affinity) are not
- * behind every finished one (from Awakenchan 0.9.34 beta 9.9). RESOGUN_THREAD_FRONT=0: the list
+ * behind every finished one (from Awakenchan 0.9.34 beta 9.9). TEMPEST_THREAD_FRONT=0: the list
  * keeps its order, as before. */
 static GuestThread *find_thread(void *handle) {
     static int front=-1;
-    if (front<0) { const char *e=getenv("RESOGUN_THREAD_FRONT"); front=!(e && e[0]=='0'); }
+    if (front<0) { const char *e=getenv("TEMPEST_THREAD_FRONT"); front=!(e && e[0]=='0'); }
     GuestThread *found=NULL;
     pthread_mutex_lock(&lock);
     GuestThread **link=&threads;
@@ -348,8 +348,8 @@ static void set_host_priority(const char *name,int guest_prio) {
 #endif
 }
 #ifdef _WIN32
-#define exit_setjmp(t) resogun_setjmp((t)->exit_jump)
-#define exit_longjmp(t) resogun_longjmp((t)->exit_jump,1)
+#define exit_setjmp(t) tempest_setjmp((t)->exit_jump)
+#define exit_longjmp(t) tempest_longjmp((t)->exit_jump,1)
 #else
 #define exit_setjmp(t) setjmp((t)->exit_jump)
 #define exit_longjmp(t) longjmp((t)->exit_jump,1)

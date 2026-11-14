@@ -3,7 +3,7 @@
 
 #include "common/bit_field.h"
 #include "shader_recompiler/ir/opcodes.h"
-#include "common/types.h" // resogun: include path
+#include "common/types.h" // tempest: include path
 
 #pragma once
 

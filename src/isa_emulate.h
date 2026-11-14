@@ -2,8 +2,8 @@
  * Ivy Bridge). Each RGISA1 record (scripts/isa_rewrite.py) describes one instruction
  * site; a stub calls isa_emulate with the guest's registers. Built with -mgeneral-regs-only and
  * no libc: it runs inside guest code and must leave the XMM/YMM registers untouched. */
-#ifndef RESOGUN_ISA_EMULATE_H
-#define RESOGUN_ISA_EMULATE_H
+#ifndef TEMPEST_ISA_EMULATE_H
+#define TEMPEST_ISA_EMULATE_H
 #include <stdint.h>
 #ifndef ABI               /* same as runtime.h, which needs sigjmp_buf (_GNU_SOURCE) */
 #define ABI __attribute__((sysv_abi))

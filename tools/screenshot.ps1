@@ -1,4 +1,4 @@
-# Capture the resogun window to a PNG: powershell -File tools/screenshot.ps1 -Out out/screen.png
+# Capture the tempest window to a PNG: powershell -File tools/screenshot.ps1 -Out out/screen.png
 param([string]$Out)
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
@@ -10,7 +10,7 @@ public class W {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
 }
 "@
-$p = Get-Process resogun -ErrorAction Stop | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+$p = Get-Process tempest -ErrorAction Stop | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
 $r = New-Object W+RECT
 [W]::GetWindowRect($p.MainWindowHandle, [ref]$r) | Out-Null
 $w = $r.R - $r.L; $h = $r.B - $r.T

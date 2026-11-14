@@ -1,4 +1,4 @@
-// resogun: optimizations that can be switched off while the game runs (RESOGUN_TOGGLE_FILE,
+// tempest: optimizations that can be switched off while the game runs (TEMPEST_TOGGLE_FILE,
 // see runtime_memory.c), to find which one changes rendering without restarting.
 #pragma once
 #include <atomic>
@@ -7,18 +7,18 @@
 #include <cstdint>
 #include <cstdlib>
 #ifdef _WIN32
-// resogun (Windows): no signals. The loader's exception handler resumes the faulting thread
-// in resogun_longjmp (src/compat_win.c: no unwinding through the faulting frames).
+// tempest (Windows): no signals. The loader's exception handler resumes the faulting thread
+// in tempest_longjmp (src/compat_win.c: no unwinding through the faulting frames).
 typedef unsigned long long sigjmp_buf[32];
-extern "C" __attribute__((returns_twice)) int resogun_setjmp(sigjmp_buf buffer);
-#define sigsetjmp(buffer, save) resogun_setjmp(buffer)
+extern "C" __attribute__((returns_twice)) int tempest_setjmp(sigjmp_buf buffer);
+#define sigsetjmp(buffer, save) tempest_setjmp(buffer)
 #endif
 
 extern "C" std::uint64_t runtime_disabled_optimizations;
 /// Recovery point for speculative guest memory reads on this thread (runtime_memory.c).
 extern "C" __thread sigjmp_buf* runtime_fault_recover;
 
-namespace ResogunToggle {
+namespace TempestToggle {
 enum : std::uint64_t {
     FetchShaderCache = 2,
     PageTrackingEarlyExit = 4,
@@ -78,13 +78,13 @@ enum : std::uint64_t {
 inline bool Disabled(std::uint64_t bit) {
     return (__atomic_load_n(&runtime_disabled_optimizations, __ATOMIC_RELAXED) & bit) != 0;
 }
-} // namespace ResogunToggle
+} // namespace TempestToggle
 
-namespace ResogunStats {
+namespace TempestStats {
 /// Guest writes caught by page protection, and pages currently left unprotected as hot.
 inline std::atomic<std::uint64_t> tracker_faults{0};
 inline std::atomic<std::int64_t> hot_pages{0};
-/// Stall diagnostics (RESOGUN_FRAME_STATS): per-frame deltas printed for frames over 40 ms.
+/// Stall diagnostics (TEMPEST_FRAME_STATS): per-frame deltas printed for frames over 40 ms.
 inline std::atomic<std::uint64_t> images_registered{0};
 inline std::atomic<std::uint64_t> image_upload_bytes{0};
 inline std::atomic<std::uint64_t> buffer_upload_bytes{0};
@@ -98,17 +98,17 @@ inline std::atomic<std::uint64_t> t_resident{0}, t_protect{0}, t_image_create{0}
     t_staging{0}, t_host_wait{0}, t_copy{0}, copy_bytes{0}, t_read_faults{0}, read_faults{0},
     t_write_faults{0}, t_copy_cpu{0}, copy_sys_us{0}, copy_minflt{0}, t_gc{0}, t_readback_wait{0};
 /// Guest instruction of the last CPU access fault on tracked memory, bit 63 set for a write
-/// (RESOGUN_PERF_DIAG readback report; taken by the download it causes).
+/// (TEMPEST_PERF_DIAG readback report; taken by the download it causes).
 inline std::atomic<std::uint64_t> fault_rip{0};
-/// What the GPU thread binds for writing next (RESOGUN_PERF_DIAG readback report): the shader's
+/// What the GPU thread binds for writing next (TEMPEST_PERF_DIAG readback report): the shader's
 /// hash for storage buffers, or one of the GpuWriter tags.
 inline thread_local std::uint64_t gpu_write_tag = 0;
 /// CPU write faults merged without a GPU download (BufferCache::TryMergeWrite).
 inline std::atomic<std::uint64_t> merged_writes{0};
 enum GpuWriter : std::uint64_t { WriterFill = 1, WriterDma = 2, WriterHle = 3 };
-/// Diagnostics are collected only with RESOGUN_FRAME_STATS=1.
+/// Diagnostics are collected only with TEMPEST_FRAME_STATS=1.
 inline const bool enabled = [] {
-    const char* env = std::getenv("RESOGUN_FRAME_STATS");
+    const char* env = std::getenv("TEMPEST_FRAME_STATS");
     return env && env[0] == '1';
 }();
 struct Timer {
@@ -148,4 +148,4 @@ inline std::atomic<std::uint64_t> gpu_signal_faults{0};
 /// Protection changes: calls and pages, those removing write access (TLB shootdowns) apart.
 inline std::atomic<std::uint64_t> protect_calls{0}, protect_pages{0}, protect_revoke_calls{0},
     protect_revoke_pages{0};
-} // namespace ResogunStats
+} // namespace TempestStats

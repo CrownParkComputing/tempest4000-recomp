@@ -36,7 +36,7 @@ struct Frame {
     u64 ready_tick;
     bool is_hdr{false};
     u8 id{};
-    vk::Format format{}; ///< resogun: of `image` (screenshots)
+    vk::Format format{}; ///< tempest: of `image` (screenshots)
 };
 
 enum SchedulerType {
@@ -95,7 +95,7 @@ public:
     Frame* PrepareBlankFrame(bool present_thread);
 
     void Present(Frame* frame, bool is_reusing_frame = false, bool is_game_frame = true);
-    /// resogun: a black frame with the loading screen (ResogunOverlay::SetLoading) only.
+    /// tempest: a black frame with the loading screen (TempestOverlay::SetLoading) only.
     void PresentLoadingFrame();
     Frame* PrepareLastFrame();
 
@@ -115,10 +115,10 @@ private:
     Instance instance;
     HostPasses::PostProcessingPass::Settings pp_settings{};
     HostPasses::PostProcessingPass pp_pass;
-    HostPasses::RcasPass rcas_pass; ///< resogun: sharpening (ResogunSettings::sharpening)
+    HostPasses::RcasPass rcas_pass; ///< tempest: sharpening (TempestSettings::sharpening)
     AmdGpu::Liverpool* liverpool;
     Scheduler draw_scheduler;
-    u64 previous_frame_tick = 0; ///< resogun: one frame in flight (PrepareFrame)
+    u64 previous_frame_tick = 0; ///< tempest: one frame in flight (PrepareFrame)
     Scheduler present_scheduler;
     Scheduler flip_scheduler;
     Swapchain swapchain;

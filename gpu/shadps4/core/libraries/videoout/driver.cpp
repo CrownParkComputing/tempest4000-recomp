@@ -18,9 +18,9 @@
 #include <sys/resource.h>
 #endif
 #include "common/assert.h"
-#include "resogun_toggles.h"
-#include "resogun_settings.h"
-#include "resogun_overlay.h"
+#include "tempest_toggles.h"
+#include "tempest_settings.h"
+#include "tempest_overlay.h"
 #include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -40,12 +40,12 @@ extern std::unique_ptr<Vulkan::Presenter> presenter;
 extern std::unique_ptr<AmdGpu::Liverpool> liverpool;
 
 namespace Vulkan {
-extern std::atomic<u64> g_resogun_compile_ns;
-extern std::atomic<u32> g_resogun_compiles;
-extern std::atomic<u64> g_resogun_capture_ns, g_resogun_async_ns, g_resogun_compile_wait_ns;
-extern std::atomic<u64> g_resogun_snapshot_ns, g_resogun_guest_wait_ns;
-extern std::atomic<u32> g_resogun_pending_draws, g_resogun_build_waits;
-extern std::atomic<u64> g_resogun_build_wait_ns;
+extern std::atomic<u64> g_tempest_compile_ns;
+extern std::atomic<u32> g_tempest_compiles;
+extern std::atomic<u64> g_tempest_capture_ns, g_tempest_async_ns, g_tempest_compile_wait_ns;
+extern std::atomic<u64> g_tempest_snapshot_ns, g_tempest_guest_wait_ns;
+extern std::atomic<u32> g_tempest_pending_draws, g_tempest_build_waits;
+extern std::atomic<u64> g_tempest_build_wait_ns;
 } // namespace Vulkan
 
 namespace Libraries::VideoOut {
@@ -77,7 +77,7 @@ VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
     main_port.resolution.full_height = height;
     main_port.resolution.pane_width = width;
     main_port.resolution.pane_height = height;
-    const char* separate = std::getenv("RESOGUN_PRESENT_THREAD");
+    const char* separate = std::getenv("TEMPEST_PRESENT_THREAD");
     separate_swap = !(separate && separate[0] == '0');
     if (separate_swap) {
         swap_thread = std::jthread([&](std::stop_token token) { SwapThread(token); });
@@ -101,7 +101,7 @@ void VideoOutDriver::RunPresenter(std::function<void()> work, bool if_idle) {
 }
 
 void VideoOutDriver::SwapThread(std::stop_token token) {
-    Common::SetCurrentThreadName("resogun:Present");
+    Common::SetCurrentThreadName("tempest:Present");
     while (true) {
         std::function<void()> work;
         {
@@ -223,7 +223,7 @@ int VideoOutDriver::RegisterBuffers(VideoOutPort* port, s32 startIndex, void* co
              attribute->aspect_ratio, static_cast<u32>(attribute->tiling_mode), attribute->width,
              attribute->height, attribute->pitch_in_pixel, attribute->option);
 
-    // resogun: the size the game draws its frames at, for the log.
+    // tempest: the size the game draws its frames at, for the log.
     std::printf("VideoOut: game registered %d display buffer(s) of %ux%u (%s)\n", bufferNum,
                 attribute->width, attribute->height, GetPixelFormatString(attribute->pixel_format).data());
     auto& group = port->groups[group_index];
@@ -307,12 +307,12 @@ int VideoOutDriver::ChangeBufferAttribute(VideoOutPort* port, s32 attributeIndex
     return 0;
 }
 
-// resogun: frames handed to the presenter, for the loader's hang dump (resogun_gpu_flips).
-static std::atomic<u64> g_resogun_flips_shown;
+// tempest: frames handed to the presenter, for the loader's hang dump (tempest_gpu_flips).
+static std::atomic<u64> g_tempest_flips_shown;
 
 void VideoOutDriver::Flip(const Request& req) {
-    g_resogun_flips_shown.fetch_add(1, std::memory_order_relaxed);
-    // Update HDR status before presenting, then present the frame (resogun: on the swap thread).
+    g_tempest_flips_shown.fetch_add(1, std::memory_order_relaxed);
+    // Update HDR status before presenting, then present the frame (tempest: on the swap thread).
     RunPresenter([this, frame = req.frame, hdr = req.port->is_hdr] {
         presenter->SetHDR(hdr);
         presenter->Present(frame);
@@ -320,8 +320,8 @@ void VideoOutDriver::Flip(const Request& req) {
     Vulkan::FrameCapture::OnFlip(req.index >= 0 ? req.port->buffer_slots[req.index].address_left
                                                 : 0);
 
-    // resogun: RESOGUN_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
-    static const bool frame_stats = EmulatorSettingsImpl::Flag("RESOGUN_FRAME_STATS", false);
+    // tempest: TEMPEST_FRAME_STATS=1 prints flip rate and frame time spread every 5 seconds.
+    static const bool frame_stats = EmulatorSettingsImpl::Flag("TEMPEST_FRAME_STATS", false);
     if (frame_stats) {
         using Clock = std::chrono::steady_clock;
         static Clock::time_point window_start = Clock::now(), last = window_start;
@@ -336,8 +336,8 @@ void VideoOutDriver::Flip(const Request& req) {
         static std::atomic<s64> refresh_ns{0};
         static const bool refresh_stamps = [] {
             std::thread([] {
-                Common::SetCurrentThreadName("resogun:RefreshStamps");
-                while (ResogunWaitForVblank()) {
+                Common::SetCurrentThreadName("tempest:RefreshStamps");
+                while (TempestWaitForVblank()) {
                     refresh_ns = Clock::now().time_since_epoch().count();
                 }
             }).detach();
@@ -354,18 +354,18 @@ void VideoOutDriver::Flip(const Request& req) {
         // Stall diagnostics: what happened during a long frame.
         static u64 last_gpu_ns, last_images, last_image_bytes, last_buffer_bytes;
         static u64 last_t[6], last_minflt, last_sigf, last_pc, last_pp, last_rc, last_rp;
-        const u64 pc = ResogunStats::protect_calls.load(), pp = ResogunStats::protect_pages.load(),
-                  rc = ResogunStats::protect_revoke_calls.load(), rp = ResogunStats::protect_revoke_pages.load();
-        const u64 minflt = ResogunStats::gpu_minor_faults.load(), sigf = ResogunStats::gpu_signal_faults.load();
+        const u64 pc = TempestStats::protect_calls.load(), pp = TempestStats::protect_pages.load(),
+                  rc = TempestStats::protect_revoke_calls.load(), rp = TempestStats::protect_revoke_pages.load();
+        const u64 minflt = TempestStats::gpu_minor_faults.load(), sigf = TempestStats::gpu_signal_faults.load();
         static u64 last_copy_cpu, last_copy_sys, last_copy_flt;
-        const u64 copy_cpu = ResogunStats::t_copy_cpu.load(), copy_sys = ResogunStats::copy_sys_us.load(),
-                  copy_flt = ResogunStats::copy_minflt.load();
+        const u64 copy_cpu = TempestStats::t_copy_cpu.load(), copy_sys = TempestStats::copy_sys_us.load(),
+                  copy_flt = TempestStats::copy_minflt.load();
         static u64 last_proc_flt, last_copy_ns, last_copy_bytes, last_rf, last_trf, last_twf;
-        const u64 rf = ResogunStats::read_faults.load(), trf = ResogunStats::t_read_faults.load(),
-                  twf = ResogunStats::t_write_faults.load();
-        // resogun: every frame over 40 ms (RESOGUN_STALL_MS) after the first, at most 10 per 5 s window.
+        const u64 rf = TempestStats::read_faults.load(), trf = TempestStats::t_read_faults.load(),
+                  twf = TempestStats::t_write_faults.load();
+        // tempest: every frame over 40 ms (TEMPEST_STALL_MS) after the first, at most 10 per 5 s window.
         static const double stall_ms = [] {
-            const char* value = std::getenv("RESOGUN_STALL_MS");
+            const char* value = std::getenv("TEMPEST_STALL_MS");
             return value ? std::atof(value) : 40.0;
         }();
         static bool primed = false;
@@ -376,10 +376,10 @@ void VideoOutDriver::Flip(const Request& req) {
         // Waits and work inside the long frame (window counters are reset every 5 s, so the
         // previous values are reset with them).
         static u64 last_wait[7];
-        const u64 wait_now[7] = {ResogunStats::t_readback_wait.load(), ResogunStats::tick_wait_ns.load(),
-                                 ResogunStats::sync_recording_ns.load(), ResogunStats::host_copies_wait_ns.load(),
-                                 u64(Vulkan::g_resogun_compile_ns.load()), u64(Vulkan::g_resogun_compiles.load()),
-                                 ResogunStats::t_gc.load()};
+        const u64 wait_now[7] = {TempestStats::t_readback_wait.load(), TempestStats::tick_wait_ns.load(),
+                                 TempestStats::sync_recording_ns.load(), TempestStats::host_copies_wait_ns.load(),
+                                 u64(Vulkan::g_tempest_compile_ns.load()), u64(Vulkan::g_tempest_compiles.load()),
+                                 TempestStats::t_gc.load()};
         if (stall) {
             std::printf("Stall: %.1f ms frame; waits: readback %.1f ms, GPU ticks %.1f ms, "
                         "recorder %.1f ms, host copies %.1f ms; %llu compiles %.1f ms; GC %.1f ms\n",
@@ -397,27 +397,27 @@ void VideoOutDriver::Flip(const Request& req) {
         last_rf = rf;
         last_trf = trf;
         last_twf = twf;
-        const u64 copy_ns = ResogunStats::t_copy.load(), copy_bytes = ResogunStats::copy_bytes.load();
+        const u64 copy_ns = TempestStats::t_copy.load(), copy_bytes = TempestStats::copy_bytes.load();
         u64 proc_flt = 0;
 #ifndef _WIN32
         if (rusage usage{}; getrusage(RUSAGE_SELF, &usage) == 0) {
             proc_flt = usage.ru_minflt;
         }
 #endif
-        const u64 t_now[6] = {ResogunStats::t_resident.load(), ResogunStats::t_protect.load(),
-                              ResogunStats::t_image_create.load(), ResogunStats::t_refresh.load(),
-                              ResogunStats::t_staging.load(), ResogunStats::t_host_wait.load()};
+        const u64 t_now[6] = {TempestStats::t_resident.load(), TempestStats::t_protect.load(),
+                              TempestStats::t_image_create.load(), TempestStats::t_refresh.load(),
+                              TempestStats::t_staging.load(), TempestStats::t_host_wait.load()};
         static u64 last_draws, last_dispatches, last_subs, last_sys, last_user, last_invol, last_vol;
-        const u64 draws = ResogunStats::draws.load(), dispatches = ResogunStats::dispatches.load(),
-                  subs = ResogunStats::submissions.load(), sys_us = ResogunStats::gpu_sys_us.load(),
-                  user_us = ResogunStats::gpu_user_us.load(), invol = ResogunStats::gpu_invol_switches.load(),
-                  vol = ResogunStats::gpu_vol_switches.load();
+        const u64 draws = TempestStats::draws.load(), dispatches = TempestStats::dispatches.load(),
+                  subs = TempestStats::submissions.load(), sys_us = TempestStats::gpu_sys_us.load(),
+                  user_us = TempestStats::gpu_user_us.load(), invol = TempestStats::gpu_invol_switches.load(),
+                  vol = TempestStats::gpu_vol_switches.load();
         u64 gpu_ns = 0;
 #ifdef _WIN32
-        // resogun: Windows has no per-thread clock id; the thread's user + kernel time instead.
+        // tempest: Windows has no per-thread clock id; the thread's user + kernel time instead.
         static HANDLE gpu_thread = nullptr;
         if (!gpu_thread) {
-            if (const unsigned long id = ResogunStats::gpu_thread_id.load()) {
+            if (const unsigned long id = TempestStats::gpu_thread_id.load()) {
                 gpu_thread = OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, id);
             }
         }
@@ -429,15 +429,15 @@ void VideoOutDriver::Flip(const Request& req) {
             gpu_ns = ns(kernel) + ns(user);
         }
 #else
-        if (const int clock = ResogunStats::gpu_thread_clock.load(); clock != -1) {
+        if (const int clock = TempestStats::gpu_thread_clock.load(); clock != -1) {
             timespec ts{};
             clock_gettime(static_cast<clockid_t>(clock), &ts);
             gpu_ns = u64(ts.tv_sec) * 1000000000ull + u64(ts.tv_nsec);
         }
 #endif
-        const u64 images = ResogunStats::images_registered.load();
-        const u64 image_bytes = ResogunStats::image_upload_bytes.load();
-        const u64 buffer_bytes = ResogunStats::buffer_upload_bytes.load();
+        const u64 images = TempestStats::images_registered.load();
+        const u64 image_bytes = TempestStats::image_upload_bytes.load();
+        const u64 buffer_bytes = TempestStats::buffer_upload_bytes.load();
         if (stall) {
             std::printf("       GPU thread on CPU %.1f ms; %llu images registered, "
                         "%.1f MB image uploads, %.1f MB buffer uploads\n",
@@ -504,23 +504,23 @@ void VideoOutDriver::Flip(const Request& req) {
         ++frames;
         const double window = std::chrono::duration<double>(now - window_start).count();
         if (window >= 5.0) {
-            const u32 compiles = Vulkan::g_resogun_compiles.exchange(0);
-            const u64 compile_ns = Vulkan::g_resogun_compile_ns.exchange(0);
-            const double capture_ms = Vulkan::g_resogun_capture_ns.exchange(0) / 1e6;
-            const double async_ms = Vulkan::g_resogun_async_ns.exchange(0) / 1e6;
-            const double wait_ms = Vulkan::g_resogun_compile_wait_ns.exchange(0) / 1e6;
-            const double snapshot_ms = Vulkan::g_resogun_snapshot_ns.exchange(0) / 1e6;
-            const double guest_wait_ms = Vulkan::g_resogun_guest_wait_ns.exchange(0) / 1e6;
-            const u32 pending_draws = Vulkan::g_resogun_pending_draws.exchange(0);
-            const u32 build_waits = Vulkan::g_resogun_build_waits.exchange(0);
-            const double build_wait_ms = Vulkan::g_resogun_build_wait_ns.exchange(0) / 1e6;
+            const u32 compiles = Vulkan::g_tempest_compiles.exchange(0);
+            const u64 compile_ns = Vulkan::g_tempest_compile_ns.exchange(0);
+            const double capture_ms = Vulkan::g_tempest_capture_ns.exchange(0) / 1e6;
+            const double async_ms = Vulkan::g_tempest_async_ns.exchange(0) / 1e6;
+            const double wait_ms = Vulkan::g_tempest_compile_wait_ns.exchange(0) / 1e6;
+            const double snapshot_ms = Vulkan::g_tempest_snapshot_ns.exchange(0) / 1e6;
+            const double guest_wait_ms = Vulkan::g_tempest_guest_wait_ns.exchange(0) / 1e6;
+            const u32 pending_draws = Vulkan::g_tempest_pending_draws.exchange(0);
+            const u32 build_waits = Vulkan::g_tempest_build_waits.exchange(0);
+            const double build_wait_ms = Vulkan::g_tempest_build_wait_ns.exchange(0) / 1e6;
             const u64 direct = Vulkan::Scheduler::direct_recordings.exchange(0);
-            const u64 faults = ResogunStats::tracker_faults.exchange(0);
+            const u64 faults = TempestStats::tracker_faults.exchange(0);
             // GPU command thread CPU time per draw: comparable between builds even when the scene
             // (and so the frame rate) differs a little.
             static u64 window_draws = 0, window_gpu_us = 0;
-            const u64 all_draws = ResogunStats::draws.load();
-            const u64 gpu_us = ResogunStats::gpu_user_us.load() + ResogunStats::gpu_sys_us.load();
+            const u64 all_draws = TempestStats::draws.load();
+            const u64 gpu_us = TempestStats::gpu_user_us.load() + TempestStats::gpu_sys_us.load();
             const double us_per_draw = all_draws > window_draws
                                            ? double(gpu_us - window_gpu_us) / (all_draws - window_draws)
                                            : 0.0;
@@ -538,15 +538,15 @@ void VideoOutDriver::Flip(const Request& req) {
                         compile_ns / 1e6, capture_ms, async_ms, wait_ms, snapshot_ms, guest_wait_ms,
                         pending_draws, build_waits, build_wait_ms,
                         static_cast<unsigned long long>(direct),
-                        faults / window, ResogunStats::merged_writes.exchange(0) / window,
-                        static_cast<long long>(ResogunStats::hot_pages.load()),
+                        faults / window, TempestStats::merged_writes.exchange(0) / window,
+                        static_cast<long long>(TempestStats::hot_pages.load()),
                         us_per_draw, draws_per_frame,
-                        ResogunStats::gpu_idle_ns.exchange(0) / (window * 1e7),
-                        ResogunStats::sync_recording_ns.exchange(0) / (window * 1e7),
-                        ResogunStats::host_copies_wait_ns.exchange(0) / (window * 1e7),
-                        frames ? double(ResogunStats::host_copy_waits.exchange(0)) / frames : 0.0,
-                        ResogunStats::copy_threads_wait_ns.exchange(0) / (window * 1e7),
-                        ResogunStats::tick_wait_ns.exchange(0) / (window * 1e7));
+                        TempestStats::gpu_idle_ns.exchange(0) / (window * 1e7),
+                        TempestStats::sync_recording_ns.exchange(0) / (window * 1e7),
+                        TempestStats::host_copies_wait_ns.exchange(0) / (window * 1e7),
+                        frames ? double(TempestStats::host_copy_waits.exchange(0)) / frames : 0.0,
+                        TempestStats::copy_threads_wait_ns.exchange(0) / (window * 1e7),
+                        TempestStats::tick_wait_ns.exchange(0) / (window * 1e7));
             presenter->GetRasterizer().GetPipelineCache().ReportCompilerStats();
             Vulkan::WaitDiagnostics::Report();
             // Frame pacing: spread of the guest flip intervals (judder that the mean hides).
@@ -694,7 +694,7 @@ void VideoOutDriver::SubmitFlipInternal(VideoOutPort* port, s32 index, s64 flip_
 }
 
 void VideoOutDriver::PresentThread(std::stop_token token) {
-    // resogun: the vblank follows settings.ini frame_rate, which the Display Settings panel
+    // tempest: the vblank follows settings.ini frame_rate, which the Display Settings panel
     // changes while the game runs: the period, timer and display lock are redone at a change.
     std::chrono::nanoseconds vblank_period = EmulatorSettings.GetVblankPeriod();
 
@@ -703,16 +703,16 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
     Common::AccurateTimer timer{vblank_period};
 
-    // resogun: one flip per vblank (settings.ini frame_rate: 60 to 180; at 30 the game itself flips every second vblank) on any display.
-    // Resogun runs its game logic once per flip at its own target rate (set to match,
+    // tempest: one flip per vblank (settings.ini frame_rate: 60 to 180; at 30 the game itself flips every second vblank) on any display.
+    // Tempest runs its game logic once per flip at its own target rate (set to match,
     // src/runtime_game.c), so following a faster display ran the game at double speed.
     int vblank_hz = int(EmulatorSettings.GetVblankFrequency());
     std::printf("VideoOut: vblank %.3f Hz\n", 1e9 / vblank_period.count());
-    // resogun: RESOGUN_VBLANK_HZ keeps the vblank off frame_rate while the engine still follows
+    // tempest: TEMPEST_VBLANK_HZ keeps the vblank off frame_rate while the engine still follows
     // it: any other rate changes the game's speed. Said loudly, since an environment variable
     // left from a measurement outlives it.
-    if (const char* value = std::getenv("RESOGUN_VBLANK_HZ"); value && value[0]) {
-        std::printf("VideoOut: WARNING: RESOGUN_VBLANK_HZ=%s overrides frame_rate; the game runs at "
+    if (const char* value = std::getenv("TEMPEST_VBLANK_HZ"); value && value[0]) {
+        std::printf("VideoOut: WARNING: TEMPEST_VBLANK_HZ=%s overrides frame_rate; the game runs at "
                     "another speed unless they match (measurements only)\n", value);
     }
 
@@ -726,16 +726,16 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
         return {};
     };
 
-    // resogun: with VSync on and one flip per vblank, a tick starts with the display's own
-    // refresh (ResogunWaitForVblank) instead of the timer at its nominal rate: the timer's
+    // tempest: with VSync on and one flip per vblank, a tick starts with the display's own
+    // refresh (TempestWaitForVblank) instead of the timer at its nominal rate: the timer's
     // flips drifted ~0.04 ms/s against the real refresh (crossing it every few minutes) with a
     // 0.5 ms spread, so the guest's frame times wavered; locked, the spread is 0.04 ms and the
     // phase stays within 0.1 ms of the refresh. A display at another rate than the vblank, or
-    // a wait that fails or returns at once (minimized), keeps the timer. RESOGUN_VBLANK_TIMER=1
+    // a wait that fails or returns at once (minimized), keeps the timer. TEMPEST_VBLANK_TIMER=1
     // always uses it (measurements).
-    const bool follow_display_at_start = !EmulatorSettingsImpl::Flag("RESOGUN_VBLANK_TIMER", false) &&
-                                    std::getenv("RESOGUN_VBLANK_HZ") == nullptr;
-    bool follow_display = follow_display_at_start && std::abs(ResogunWindowRefreshRate() - vblank_hz) < 0.5;
+    const bool follow_display_at_start = !EmulatorSettingsImpl::Flag("TEMPEST_VBLANK_TIMER", false) &&
+                                    std::getenv("TEMPEST_VBLANK_HZ") == nullptr;
+    bool follow_display = follow_display_at_start && std::abs(TempestWindowRefreshRate() - vblank_hz) < 0.5;
     bool on_display = false;
     auto last_tick = std::chrono::steady_clock::now();
 
@@ -751,8 +751,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
             on_display = false;
             std::printf("VideoOut: vblank %.3f Hz (frame_rate %d)\n", 1e9 / vblank_period.count(), hz);
         }
-        bool display_tick = follow_display && ResogunSettings::Get().vsync &&
-                            ResogunWaitForVblank();
+        bool display_tick = follow_display && TempestSettings::Get().vsync &&
+                            TempestWaitForVblank();
         if (display_tick && std::chrono::steady_clock::now() - last_tick < vblank_period / 2) {
             display_tick = false; // no refresh to wait for: the timer keeps the rate
         }
@@ -819,7 +819,7 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
 
 } // namespace Libraries::VideoOut
 
-// resogun: frames shown since start (the loader's hang dump watches it).
-extern "C" unsigned long long resogun_gpu_flips(void) {
-    return Libraries::VideoOut::g_resogun_flips_shown.load(std::memory_order_relaxed);
+// tempest: frames shown since start (the loader's hang dump watches it).
+extern "C" unsigned long long tempest_gpu_flips(void) {
+    return Libraries::VideoOut::g_tempest_flips_shown.load(std::memory_order_relaxed);
 }

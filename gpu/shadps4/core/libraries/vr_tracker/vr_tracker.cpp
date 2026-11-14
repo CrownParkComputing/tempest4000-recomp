@@ -11,7 +11,7 @@
 #include "core/libraries/vr_tracker/vr_tracker_error.h"
 #include "video_core/amdgpu/liverpool.h"
 
-// resogun: the C runtime owns guest memory; it answers the VirtualQuery checks below.
+// tempest: the C runtime owns guest memory; it answers the VirtualQuery checks below.
 extern "C" int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
 
 namespace Libraries::VrTracker {
@@ -110,7 +110,7 @@ s32 PS4_SYSV_ABI sceVrTrackerInit(const OrbisVrTrackerInitParam* param) {
 
     // Real hardware will segfault if any of the supplied mappings aren't long enough,
     // Validate each of them to ensure nothing weird can occur when this library is implemented.
-    // resogun: each range must be mapped guest memory (shadPS4: one VMA via VirtualQuery).
+    // tempest: each range must be mapped guest memory (shadPS4: one VMA via VirtualQuery).
     ASSERT_MSG(runtime_memory_is_mapped(std::bit_cast<VAddr>(param->direct_memory_garlic),
                                         param->direct_memory_garlic_size),
                "Insufficient garlic memory provided");

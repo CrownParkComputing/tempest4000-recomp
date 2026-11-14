@@ -1,5 +1,5 @@
 /* libSceFiber: user-mode fibers on the calling thread (shadPS4 fiber.cpp has the contracts).
- * Resogun runs its jobs as coroutines: one fiber per job, resumed with sceFiberRun from a thread
+ * Tempest runs its jobs as coroutines: one fiber per job, resumed with sceFiberRun from a thread
  * (sceFiberSwitch from inside another fiber), and the job yields with sceFiberReturnToThread.
  *
  *   sceFiberRun(fiber, argOnRunTo, *argOnReturn): from a thread, not a fiber: runs `fiber` until

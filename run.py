@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Resogun on PC: prepare the game image and start the game.
+"""Tempest on PC: prepare the game image and start the game.
 
     python run.py            prepare if needed, then start the game
     python run.py check      prepare if needed, then list the PS4 imports the runtime lacks
     python run.py prepare    rebuild the game image only
 
-Options: --game DIR (the decrypted dump; default RESOGUN_GAME_DIR), --timeout SECONDS (play only),
+Options: --game DIR (the decrypted dump; default TEMPEST_GAME_DIR), --timeout SECONDS (play only),
 --out DIR (the game image, default out/game), --dlc DIR (one more folder of DLC next to the save's
-addcont, e.g. shadPS4's addcont; default RESOGUN_DLC_DIR). Other arguments go to resogun. Saves land in
-user/, shader caches in shaders/ next to the exe (out/shaders; RESOGUN_SHADER_DIR moves it), the GPU
+addcont, e.g. shadPS4's addcont; default TEMPEST_DLC_DIR). Other arguments go to tempest. Saves land in
+user/, shader caches in shaders/ next to the exe (out/shaders; TEMPEST_SHADER_DIR moves it), the GPU
 library's logs in the folder every copy of the game shares (shared_cache_dir), options in
 user/settings.ini, or settings.ini here until that exists (see settings.example.ini).
 """
@@ -35,7 +35,7 @@ def fail(message):
 
 
 def parse_cpu_features(output):
-    """Instruction sets `resogun --cpu-features` reports missing ([] when complete)."""
+    """Instruction sets `tempest --cpu-features` reports missing ([] when complete)."""
     for line in output.splitlines():
         if line.startswith('CPU: missing '):
             return [name.strip() for name in line[len('CPU: missing '):].split(',') if name.strip()]
@@ -43,8 +43,8 @@ def parse_cpu_features(output):
 
 
 def isa_rewrite_wanted(missing, env):
-    """RESOGUN_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
-    policy = env.get('RESOGUN_ISA_REWRITE')
+    """TEMPEST_ISA_REWRITE=1 forces the ISA rewrite table, 0 disables it; otherwise the CPU decides."""
+    policy = env.get('TEMPEST_ISA_REWRITE')
     if policy in ('0', '1'):
         return policy == '1'
     return bool(missing)
@@ -53,12 +53,12 @@ def isa_rewrite_wanted(missing, env):
 def shared_cache_dir(env=os.environ):
     """Shader and pipeline caches (and the GPU library's logs): one folder per PC, shared by run.py
     and set-up copies of the game (src/launcher.c), whatever their save folder.
-    RESOGUN_GPU_USER_DIR overrides it."""
-    if env.get('RESOGUN_GPU_USER_DIR'):
-        return Path(env['RESOGUN_GPU_USER_DIR'])
+    TEMPEST_GPU_USER_DIR overrides it."""
+    if env.get('TEMPEST_GPU_USER_DIR'):
+        return Path(env['TEMPEST_GPU_USER_DIR'])
     if WINDOWS:
-        return Path(env.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / 'Resogun'
-    return Path(env.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'resogun'
+        return Path(env.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local') / 'Tempest'
+    return Path(env.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'tempest'
 
 
 def run_script(name, *args, check=True):
@@ -89,7 +89,7 @@ def prepare(game, out, force=False, any_build=False):
 
 
 def find_exe():
-    exe = Path(os.environ['RESOGUN_EXE']) if os.environ.get('RESOGUN_EXE') else PORT / 'out' / ('resogun' + EXE_SUFFIX)
+    exe = Path(os.environ['TEMPEST_EXE']) if os.environ.get('TEMPEST_EXE') else PORT / 'out' / ('tempest' + EXE_SUFFIX)
     if not exe.is_file():
         fail(f'{exe} not found: build it with build.sh (MSYS2 CLANG64 shell on Windows).')
     # Development builds use the MSYS2 CLANG64 DLLs (SDL3, zlib, ...); a release has them in libs/.
@@ -129,8 +129,8 @@ def play(exe, game, out, timeout, user, extra, dlc=None):
         if run_script('isa_rewrite.py', out / 'boot-linked.bin', '--out', out, check=False) == 0:
             isa_args = ['--isa-rewrite', str(out / 'isa-rewrite.bin')]
     # As the release's launcher: the save folder's settings.ini, else the one next to this script.
-    env.setdefault('RESOGUN_CONFIG', str(user / 'settings.ini'))
-    env.setdefault('RESOGUN_CONFIG_DEFAULT', str(PORT / 'settings.ini'))
+    env.setdefault('TEMPEST_CONFIG', str(user / 'settings.ini'))
+    env.setdefault('TEMPEST_CONFIG_DEFAULT', str(PORT / 'settings.ini'))
     command = [str(exe), str(out / 'boot-linked.bin'), '--content-profile', str(out / 'content.bin'),
                '--app0', str(game), '--user', str(user), '--timeout', str(timeout), *isa_args,
                *(['--dlc', str(dlc)] if dlc else []), *extra]
@@ -145,20 +145,20 @@ def play(exe, game, out, timeout, user, extra, dlc=None):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('command', nargs='?', choices=('play', 'check', 'prepare'), default='play')
-    p.add_argument('--game', type=Path, default=os.environ.get('RESOGUN_GAME_DIR'))
-    p.add_argument('--timeout', type=int, default=int(os.environ.get('RESOGUN_TIMEOUT', '0')))
+    p.add_argument('--game', type=Path, default=os.environ.get('TEMPEST_GAME_DIR'))
+    p.add_argument('--timeout', type=int, default=int(os.environ.get('TEMPEST_TIMEOUT', '0')))
     p.add_argument('--user', type=Path, default=PORT / 'user', help='saves, settings and the log (default: user/)')
     p.add_argument('--out', type=Path, default=PORT / 'out' / 'game', help='the game image (default: out/game)')
-    p.add_argument('--dlc', type=Path, default=os.environ.get('RESOGUN_DLC_DIR') or None,
+    p.add_argument('--dlc', type=Path, default=os.environ.get('TEMPEST_DLC_DIR') or None,
                    help="one more folder of DLC, next to the save's addcont (e.g. shadPS4's addcont)")
     p.add_argument('--any-build', action='store_true',
                    help='prepare an eboot.bin that is not a verified build (scripts/prepare.py VERIFIED_BUILDS)')
     a, extra = p.parse_known_args()
     if a.game is None:
-        fail('Pass the decrypted game dump with --game DIR or set RESOGUN_GAME_DIR.')
+        fail('Pass the decrypted game dump with --game DIR or set TEMPEST_GAME_DIR.')
     game = a.game.resolve()
     if not (game / 'eboot.bin').is_file():
-        fail(f'No eboot.bin in {game} (pass --game or set RESOGUN_GAME_DIR).')
+        fail(f'No eboot.bin in {game} (pass --game or set TEMPEST_GAME_DIR).')
     out = a.out.resolve()
     prepare(game, out, force=a.command == 'prepare', any_build=a.any_build)
     if a.command == 'prepare':
@@ -169,11 +169,11 @@ def main():
     # of the save do not write to ./user.
     user = a.user.resolve()
     user.mkdir(parents=True, exist_ok=True)
-    os.environ['RESOGUN_GPU_USER_DIR'] = str(shared_cache_dir())
+    os.environ['TEMPEST_GPU_USER_DIR'] = str(shared_cache_dir())
     # Shader caches: shaders/ next to the exe, as an installed copy's (src/launcher.c).
-    os.environ.setdefault('RESOGUN_SHADER_DIR', str(exe.parent / 'shaders'))
+    os.environ.setdefault('TEMPEST_SHADER_DIR', str(exe.parent / 'shaders'))
     # Development runs log every routine event; installed copies only faults, stops and errors.
-    os.environ.setdefault('RESOGUN_VERBOSE', '1')
+    os.environ.setdefault('TEMPEST_VERBOSE', '1')
     if a.command == 'check':
         return check(exe, out)
     return play(exe, game, out, a.timeout, user, extra, a.dlc.resolve() if a.dlc else None)

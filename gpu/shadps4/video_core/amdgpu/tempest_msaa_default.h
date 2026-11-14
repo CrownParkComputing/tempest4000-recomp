@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// resogun: the Vulkan drivers where the game's multisampled images are created single-sampled
-// unless RESOGUN_NO_MSAA says otherwise (resogun_msaa.h). vk_instance.cpp decides with it.
+// tempest: the Vulkan drivers where the game's multisampled images are created single-sampled
+// unless TEMPEST_NO_MSAA says otherwise (tempest_msaa.h). vk_instance.cpp decides with it.
 //
 // AMD's Windows driver: the RX 6600 family reads the 2-sample depth buffer wrong and the
 // lighting shows black lines. Intel's Windows driver: the same lines on Arc A750, B580
@@ -10,6 +10,6 @@
 
 #include <vulkan/vulkan_core.h>
 
-static inline int resogun_no_msaa_default(VkDriverId driver) {
+static inline int tempest_no_msaa_default(VkDriverId driver) {
     return driver == VK_DRIVER_ID_AMD_PROPRIETARY || driver == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS;
 }

@@ -13,8 +13,8 @@
 #include <bit>
 #include <cstdlib>
 #include <magic_enum/magic_enum.hpp>
-#include "resogun_copy.h"
-#include "resogun_toggles.h"
+#include "tempest_copy.h"
+#include "tempest_toggles.h"
 #include "common/alignment.h"
 #include "core/memory.h"
 #include "video_core/amdgpu/liverpool.h"
@@ -114,12 +114,12 @@ void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_lock
     });
 }
 
-// resogun: a guest that fills per-frame buffers sequentially takes a protection fault per
+// tempest: a guest that fills per-frame buffers sequentially takes a protection fault per
 // 4 KiB page. A fault unprotects the aligned window around it instead; pages marked
 // CPU-modified without being written only cost an upload when bound.
 // Item: context = BufferCache, source = guest address, destination = host pointer, size,
 // extra = the Buffer whose mapping holds the destination (flushed after the copy).
-void BufferCache::RunGuestCopy(const ResogunCopy::Item& item) {
+void BufferCache::RunGuestCopy(const TempestCopy::Item& item) {
     auto* cache = static_cast<BufferCache*>(item.context);
     auto* dst = reinterpret_cast<u8*>(item.destination);
     cache->memory->CopySparseMemory(item.source, dst, item.size);
@@ -129,33 +129,33 @@ void BufferCache::RunGuestCopy(const ResogunCopy::Item& item) {
 
 // Small guest copies run on the recording thread (it spins for work: no wakeup, and it is
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
-void BufferCache::SmallGuestCopy(const ResogunCopy::Item& item) {
-    if (scheduler.IsRecordingDeferred() && !ResogunToggle::Disabled(ResogunToggle::PoolSmallCopies)) {
+void BufferCache::SmallGuestCopy(const TempestCopy::Item& item) {
+    if (scheduler.IsRecordingDeferred() && !TempestToggle::Disabled(TempestToggle::PoolSmallCopies)) {
         scheduler.RecordHostCopy([item] { item.run(item); });
         return;
     }
-    ResogunCopy::QueueCopy(item);
+    TempestCopy::QueueCopy(item);
 }
 
 void BufferCache::ExtendWriteFault(VAddr device_addr) {
     static const u64 window = [] {
-        const char* env = std::getenv("RESOGUN_FAULT_WINDOW");
+        const char* env = std::getenv("TEMPEST_FAULT_WINDOW");
         const u64 kib = env ? std::strtoull(env, nullptr, 10) : 256;
         return std::bit_ceil(std::clamp<u64>(kib, 4, 1024)) * 1024;
     }();
-    if (window <= TRACKER_BYTES_PER_PAGE || ResogunToggle::Disabled(ResogunToggle::FaultWindow)) {
+    if (window <= TRACKER_BYTES_PER_PAGE || TempestToggle::Disabled(TempestToggle::FaultWindow)) {
         return;
     }
     memory_tracker->ExtendWriteFault(Common::AlignDown(device_addr, window), window);
 }
 
 static bool PerfDiag();
-// resogun (RESOGUN_PERF_DIAG): CPU write faults that downloaded GPU data, and how many of them
+// tempest (TEMPEST_PERF_DIAG): CPU write faults that downloaded GPU data, and how many of them
 // hit a byte the GPU wrote (the rest only share its 4 KiB page).
 static std::atomic<u64> write_downloads{0}, write_downloads_inside{0};
 
-// resogun: Resogun's CPU fills records into pages it shares with small GPU-written buffers
-// (a compute copy's 5 KiB destination; RESOGUN_PERF_DIAG readback report). Page tracking made
+// tempest: Tempest's CPU fills records into pages it shares with small GPU-written buffers
+// (a compute copy's 5 KiB destination; TEMPEST_PERF_DIAG readback report). Page tracking made
 // each such write fault download the GPU's bytes first, waiting for the whole GPU queue: ~160
 // a second, 4 ms of GPU idle a frame on a Radeon 890M. The CPU writes other bytes of the page,
 // so they are merged instead: the page's next upload leaves out the GPU-written bytes the guest
@@ -163,7 +163,7 @@ static std::atomic<u64> write_downloads{0}, write_downloads_inside{0};
 // read-protected, so the fault can read them, and guest reads of GPU-written bytes see the
 // guest's copy either way.
 bool BufferCache::TryMergeWrite(VAddr device_addr, u64 size) {
-    if (ResogunToggle::Disabled(ResogunToggle::WriteMerge) ||
+    if (TempestToggle::Disabled(TempestToggle::WriteMerge) ||
         EmulatorSettings.GetReadbacksMode() != GpuReadbacksMode::Relaxed) {
         return false;
     }
@@ -187,7 +187,7 @@ bool BufferCache::TryMergeWrite(VAddr device_addr, u64 size) {
             merged_count.fetch_add(1, std::memory_order_relaxed);
         }
     }
-    ResogunStats::merged_writes.fetch_add(1, std::memory_order_relaxed);
+    TempestStats::merged_writes.fetch_add(1, std::memory_order_relaxed);
     memory_tracker->MarkRegionAsCpuModified(device_addr, size);
     return true;
 }
@@ -224,7 +224,7 @@ void BufferCache::EmitUploadRange(VAddr addr, u64 size, Emit&& emit) {
     splitter.Finish(emit);
 }
 
-// resogun: after TryMergeWrite the page is writable and the guest can write over the GPU-written
+// tempest: after TryMergeWrite the page is writable and the guest can write over the GPU-written
 // bytes without a fault. A later download of the page (a write fault elsewhere in its 512 KiB
 // window) must not put the GPU's older copy back over those writes: it did, over a shader
 // header the game had just written (crash at eboot 0x69d459 loading a level's shaders).
@@ -282,13 +282,13 @@ void BufferCache::ReadMemory(VAddr device_addr, u64 size, bool is_write, bool as
 
 static bool PerfDiag() {
     static const bool enabled = [] {
-        const char* value = std::getenv("RESOGUN_PERF_DIAG");
+        const char* value = std::getenv("TEMPEST_PERF_DIAG");
         return value && value[0] == '1';
     }();
     return enabled;
 }
 
-// resogun (RESOGUN_PERF_DIAG): the last GPU writer of each 4 KiB page (ResogunStats::
+// tempest (TEMPEST_PERF_DIAG): the last GPU writer of each 4 KiB page (TempestStats::
 // gpu_write_tag when it was bound for writing) and the size of that binding.
 struct GpuWriterNote {
     u64 tag, size;
@@ -302,7 +302,7 @@ static void NoteGpuWrite(VAddr address, u64 size) {
     std::scoped_lock lock{gpu_writers_mutex};
     const u64 first = address >> 12, last = std::min((address + size - 1) >> 12, first + 1023);
     for (u64 page = first; page <= last; ++page) {
-        gpu_writers[page] = {ResogunStats::gpu_write_tag, size};
+        gpu_writers[page] = {TempestStats::gpu_write_tag, size};
     }
 }
 static GpuWriterNote GpuWriterOf(VAddr address) {
@@ -311,7 +311,7 @@ static GpuWriterNote GpuWriterOf(VAddr address) {
     return it == gpu_writers.end() ? GpuWriterNote{} : it->second;
 }
 
-// resogun (RESOGUN_PERF_DIAG): every 5 s, the GPU-to-CPU downloads by guest address (64 KiB),
+// tempest (TEMPEST_PERF_DIAG): every 5 s, the GPU-to-CPU downloads by guest address (64 KiB),
 // the guest instruction whose access fault asked for them (eboot offset; 0: no fault) and
 // the GPU writer of the first downloaded page (a shader hash, or fill/dma/hle; its binding
 // size), with the time scheduler.Finish() waited for the GPU.
@@ -327,7 +327,7 @@ static void NoteReadback(VAddr address, u64 bytes, std::chrono::steady_clock::du
     static auto window = std::chrono::steady_clock::now();
     static std::mutex mutex;
     constexpr u64 image_base = 0x800000000ull;
-    u64 rip = ResogunStats::fault_rip.exchange(0, std::memory_order_relaxed);
+    u64 rip = TempestStats::fault_rip.exchange(0, std::memory_order_relaxed);
     const u64 write = rip >> 63 << 63;
     rip &= ~write;
     rip = (rip >= image_base ? rip - image_base : rip) | write;
@@ -409,13 +409,13 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
                       download.mapped + (copy.dstOffset - download.offset), copy.size);
     }
     memory_tracker->UnmarkRegionAsGpuModified(device_addr, size);
-    // resogun: the guest now holds the GPU's bytes and its own newer writes; the pages are still
+    // tempest: the guest now holds the GPU's bytes and its own newer writes; the pages are still
     // CPU modified, so their next upload sends them whole.
     ForgetMergedWrites(device_addr, size);
 }
 
 namespace {
-// resogun: RESOGUN_BUFFER_STATS=1 — how buffer bindings reach the GPU, by guest region (256 MiB),
+// tempest: TEMPEST_BUFFER_STATS=1 — how buffer bindings reach the GPU, by guest region (256 MiB),
 // printed every 5 s: small read-only copies into the stream buffer, arena bindings, and the
 // bytes those re-upload after CPU writes. Input for engine-level short paths.
 struct BufferStats {
@@ -437,7 +437,7 @@ void NoteHotUse(VAddr address, u32 size) {
         return;
     }
     auto& st = Stats();
-    const u64 frame = ResogunStats::gpu_frames.load(std::memory_order_relaxed);
+    const u64 frame = TempestStats::gpu_frames.load(std::memory_order_relaxed);
     for (u64 block = address >> 16; block <= (address + size - 1) >> 16; ++block) {
         auto [it, inserted] = st.last_use.try_emplace(block, frame);
         if (!inserted && it->second != frame) {
@@ -452,7 +452,7 @@ u64 RegionKey(VAddr address) {
 }
 bool BufferStatsEnabled() {
     static const bool enabled = [] {
-        const char* value = std::getenv("RESOGUN_BUFFER_STATS");
+        const char* value = std::getenv("TEMPEST_BUFFER_STATS");
         return value && value[0] == '1';
     }();
     return enabled;
@@ -511,10 +511,10 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
             ++region.stream_count;
             region.stream_bytes += size;
         }
-        // resogun: the guest data is copied on a copy thread, started now; submission and
+        // tempest: the guest data is copied on a copy thread, started now; submission and
         // guest-visible fences wait for it (Scheduler::WaitHostCopies).
         if (!stream_buffer.mapped_data.empty() &&
-            !ResogunToggle::Disabled(ResogunToggle::DeferredStreamCopies)) {
+            !TempestToggle::Disabled(TempestToggle::DeferredStreamCopies)) {
             if (const auto offset = stream_buffer.Reserve(size, instance.UniformMinAlignment())) {
                 SmallGuestCopy({
                     .run = &RunGuestCopy,
@@ -536,14 +536,14 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     const u64 last_block = (device_addr + size - 1) >> block_shift;
     const auto* arena = GetArena(first_block, last_block);
     EnsureResident(arena, first_block, last_block);
-    const u64 uploaded_before = ResogunStats::buffer_upload_bytes.load(std::memory_order_relaxed);
+    const u64 uploaded_before = TempestStats::buffer_upload_bytes.load(std::memory_order_relaxed);
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
     if (stats) {
         auto& region = Stats().regions[RegionKey(device_addr)];
         ++region.arena_count;
         region.arena_bytes += size;
         region.upload_bytes +=
-            ResogunStats::buffer_upload_bytes.load(std::memory_order_relaxed) - uploaded_before;
+            TempestStats::buffer_upload_bytes.load(std::memory_order_relaxed) - uploaded_before;
     }
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
@@ -559,12 +559,12 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
     }
     const auto staging = staging_pool.Request(size, VideoCore::MemoryType::HostUncached,
                                               instance.StorageMinAlignment());
-    if (!ResogunToggle::Disabled(ResogunToggle::DeferredUploads)) {
-        // resogun: texture data is copied on the copy threads (streaming: 100+ MB per frame);
+    if (!TempestToggle::Disabled(TempestToggle::DeferredUploads)) {
+        // tempest: texture data is copied on the copy threads (streaming: 100+ MB per frame);
         // the upload reads the staging only after submission, which waits for the copies.
         constexpr u64 Chunk = 1_MB;
         for (u64 offset = 0; offset < staging.size; offset += Chunk) {
-            const ResogunCopy::Item item{
+            const TempestCopy::Item item{
                 .run = &RunGuestCopy,
                 .context = this,
                 .source = device_addr + offset,
@@ -575,7 +575,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
             if (staging.size < Chunk) {
                 SmallGuestCopy(item);
             } else {
-                ResogunCopy::Async([item] { item.run(item); });
+                TempestCopy::Async([item] { item.run(item); });
             }
         }
         return {staging.buffer, staging.offset};
@@ -675,7 +675,7 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
     if (bind_ranges.Empty()) {
         return;
     }
-    ResogunStats::Timer timer{ResogunStats::t_resident};
+    TempestStats::Timer timer{TempestStats::t_resident};
 
     const vk::MemoryAllocateInfo alloc_info = {
         .allocationSize = resident_blocks << block_shift,
@@ -754,12 +754,12 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
     for (const auto& copy : copies) {
         texture_cache.ResolveReadbacks(copy.dstOffset, copy.size, true, ReadbackSource::BufferUpload);
     }
-    ResogunStats::buffer_upload_bytes.fetch_add(total_size_bytes, std::memory_order_relaxed);
+    TempestStats::buffer_upload_bytes.fetch_add(total_size_bytes, std::memory_order_relaxed);
     const auto staging = staging_pool.Request(total_size_bytes, MemoryType::HostUncached);
-    // resogun: the guest memory is copied into staging on the copy threads, started now in
+    // tempest: the guest memory is copied into staging on the copy threads, started now in
     // groups of about 1 MiB; submission and guest-visible fences wait for them
     // (Scheduler::WaitHostCopies).
-    if (!ResogunToggle::Disabled(ResogunToggle::DeferredUploads) && total_size_bytes < 1_MB) {
+    if (!TempestToggle::Disabled(TempestToggle::DeferredUploads) && total_size_bytes < 1_MB) {
         // Small uploads join the calling thread's batch.
         for (auto& copy : copies) {
             SmallGuestCopy({
@@ -775,7 +775,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
         }
         return staging.buffer;
     }
-    if (!ResogunToggle::Disabled(ResogunToggle::DeferredUploads)) {
+    if (!TempestToggle::Disabled(TempestToggle::DeferredUploads)) {
         struct HostCopy {
             VAddr source;
             u8* destination;
@@ -785,7 +785,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
         auto group = std::make_shared<Group>();
         u64 group_bytes = 0;
         const auto launch = [&] {
-            ResogunCopy::Async([group, memory = memory, staging] {
+            TempestCopy::Async([group, memory = memory, staging] {
                 for (const auto& copy : *group) {
                     memory->CopySparseMemory(copy.source, copy.destination, copy.size);
                 }
@@ -813,7 +813,7 @@ const Buffer* BufferCache::UploadCopies(const Buffer* arena, std::span<vk::Buffe
                                  copies[i].size);
     };
     if (total_size_bytes >= 2_MB && copies.size() > 1) {
-        ResogunCopy::ParallelFor(copies.size(), copy);
+        TempestCopy::ParallelFor(copies.size(), copy);
     } else {
         for (std::size_t i = 0; i < copies.size(); ++i) {
             copy(i);
@@ -837,11 +837,11 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
             LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
         }
     }
-    // resogun: most texel buffers alias no image; remember misses until images change.
+    // tempest: most texel buffers alias no image; remember misses until images change.
     const u64 generation = texture_cache.RegistryGeneration();
     auto& miss = image_miss_cache[((device_addr >> 6) ^ size * 0x9E3779B1u) % image_miss_cache.size()];
     if (miss.address == device_addr && miss.size == size && miss.generation == generation &&
-        !ResogunToggle::Disabled(ResogunToggle::TextureBindingMemo)) {
+        !TempestToggle::Disabled(TempestToggle::TextureBindingMemo)) {
         return false;
     }
     const ImageId image_id = texture_cache.FindImageFromRange(device_addr, size);
@@ -849,7 +849,7 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
         miss = {device_addr, size, generation};
         return false;
     }
-    // resogun: the lookups above only read what the texture binding helper leaves alone; the
+    // tempest: the lookups above only read what the texture binding helper leaves alone; the
     // copy below changes image state, so the helper finishes first.
     runtime.BeforeImageAccess();
     Image& image = texture_cache.GetImage(image_id);

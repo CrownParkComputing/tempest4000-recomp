@@ -23,12 +23,12 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
-#include "resogun_overlay.h"
+#include "tempest_overlay.h"
 
 extern Frontend::WindowSDL* g_window;
 std::unique_ptr<Vulkan::Presenter> presenter;
 std::unique_ptr<AmdGpu::Liverpool> liverpool;
-// resogun: settings.ini frame_rate onto the engine's frame clock, at each flip (src/runtime_game.c).
+// tempest: settings.ini frame_rate onto the engine's frame clock, at each flip (src/runtime_game.c).
 extern "C" void runtime_game_frame_rate(void);
 
 namespace Libraries::GnmDriver {

@@ -1,4 +1,4 @@
-# Builds Resogun's runner from source on Linux (docs/building.md),
+# Builds Tempest's runner from source on Linux (docs/building.md),
 # runs the tests and packages each release (stripped, what players get), its symbols and the debug
 # release as the run's artifacts. FFmpeg comes from prebuilt/ (tools/build_ffmpeg.sh), built only when
 # that archive is out of date. linux-smoke unpacks the Linux release on other distros. A v* tag publishes
@@ -63,7 +63,7 @@ jobs:
 
       - name: Every compile error (failed build)
         if: failure()
-        run: ninja -C out/gpu -k 0 resogun resogun-setup 2>&1 | grep -E -A4 'error:|undefined reference' | head -400
+        run: ninja -C out/gpu -k 0 tempest tempest-setup 2>&1 | grep -E -A4 'error:|undefined reference' | head -400
 
       - name: Python tests
         run: cd tests && python3 -m unittest discover -p "test_*.py"
@@ -144,7 +144,7 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "Extract ${LINUX}-linux.tar.gz and run resogun-setup. You need the .pkg of your own copy of Resogun (CUSA00038, version 1.10), or a dump of it; see README.txt."
+            echo "Extract ${LINUX}-linux.tar.gz and run tempest-setup. You need the .pkg of your own copy of Tempest (CUSA00038, version 1.10), or a dump of it; see README.txt."
           } > notes.md
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
             --notes-file notes.md "out/${LINUX}-linux.tar.gz"

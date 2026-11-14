@@ -259,13 +259,13 @@ public:
         return vk13_features.subgroupSizeControl && vk13_props.maxSubgroupSize >= 64;
     }
 
-    /// resogun: VK_KHR_pipeline_executable_properties is on (RESOGUN_WAVE_STATS=1, vk_wave_stats.h).
+    /// tempest: VK_KHR_pipeline_executable_properties is on (TEMPEST_WAVE_STATS=1, vk_wave_stats.h).
     bool IsPipelineExecutableInfoEnabled() const {
         return pipeline_executable_properties &&
                pipeline_executable_features.pipelineExecutableInfo;
     }
 
-    /// resogun: VK_AMD_shader_info is on (statistics and ISA per stage, RESOGUN_WAVE_STATS=1).
+    /// tempest: VK_AMD_shader_info is on (statistics and ISA per stage, TEMPEST_WAVE_STATS=1).
     bool IsAmdShaderInfoEnabled() const {
         return amd_shader_info;
     }
@@ -482,7 +482,7 @@ public:
         return supports_memory_budget;
     }
 
-    /// Returns the amount of memory used. resogun: budget_now, when given, receives the driver's
+    /// Returns the amount of memory used. tempest: budget_now, when given, receives the driver's
     /// current budget of the same heaps (VK_EXT_memory_budget: what this process can use now,
     /// what other processes hold already taken off), from the same query.
     [[nodiscard]] u64 GetDeviceMemoryUsage(u64* budget_now = nullptr) const;
@@ -572,8 +572,8 @@ private:
     bool image_2d_view_of_3d{};
     bool image_view_min_lod{};
     bool shader_clock{};
-    bool pipeline_executable_properties{}; // resogun: RESOGUN_WAVE_STATS=1 (vk_wave_stats.h)
-    bool amd_shader_info{};                // resogun: with it, VK_AMD_shader_info when present
+    bool pipeline_executable_properties{}; // tempest: TEMPEST_WAVE_STATS=1 (vk_wave_stats.h)
+    bool amd_shader_info{};                // tempest: with it, VK_AMD_shader_info when present
     bool supports_memory_budget{};
     bool supports_block_texel_view{};
     u64 total_memory_budget{};

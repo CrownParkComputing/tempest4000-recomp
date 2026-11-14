@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds out/resogun and out/resogun-setup with clang and the system libraries
+# Builds out/tempest and out/tempest-setup with clang and the system libraries
 # (packages in docs/building.md). The GPU library is static and CMake links the loader as well.
 # --test also runs the runtime tests.
 set -euo pipefail
@@ -8,7 +8,7 @@ mkdir -p out
 [[ $(uname -s) == Linux ]] || { echo 'Linux only.' >&2; exit 1; }
 # -std=c11 hides POSIX from glibc's headers.
 compat=() net=() memory=() cflags=(-D_DEFAULT_SOURCE)
-targets=(resogun resogun-setup)
+targets=(tempest tempest-setup)
 cc=${CC:-clang} cxx=${CXX:-clang++}
 for tool in "$cc" "$cxx" cmake ninja pkg-config make curl; do
     command -v "$tool" >/dev/null || { echo "Need $tool (docs/building.md)." >&2; exit 1; }
@@ -27,7 +27,7 @@ if echo 'int main(void) { return 0; }' | "$cc" -x c - -fuse-ld=lld -o /dev/null 
     linker=(-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld)
 fi
 cmake -S gpu -B out/gpu -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo "${linker[@]}" \
-    -DCMAKE_C_COMPILER="$cc" -DCMAKE_CXX_COMPILER="$cxx" -DRESOGUN_FFMPEG_DIR="$ffmpeg" >/dev/null
+    -DCMAKE_C_COMPILER="$cc" -DCMAKE_CXX_COMPILER="$cxx" -DTEMPEST_FFMPEG_DIR="$ffmpeg" >/dev/null
 if ! ninja -C out/gpu "${targets[@]}" > out/gpu-build.log 2>&1; then
     grep -v '^[[]' out/gpu-build.log | tail -40 >&2
     echo 'Build failed (full log: out/gpu-build.log)' >&2; exit 1
@@ -62,7 +62,7 @@ if [[ ${1:-} == --test ]]; then
     # The video core's user folder (caches, logs) in out/, not ~/.local/share/shadPS4; it must
     # exist, or Linux falls back to the home folder.
     mkdir -p out/gpu-test-user
-    export RESOGUN_GPU_USER_DIR=out/gpu-test-user
+    export TEMPEST_GPU_USER_DIR=out/gpu-test-user
     for test in "${gpu_tests[@]}"; do
         args=()
         [[ $test == isa-stub-test ]] && args=(tests/data/isa_fixture.bin)

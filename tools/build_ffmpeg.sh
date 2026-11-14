@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the minimal static FFmpeg the runner links (build.sh runs it when PREFIX is missing or was
-# configured differently): only what Resogun uses. Its movies (video/title.mp4, menu.mp4) are MP4
+# configured differently): only what Tempest uses. Its movies (video/title.mp4, menu.mp4) are MP4
 # with H.264 video; AvPlayer also accepts AAC audio; save icons and the start-up picture are PNG.
 # AvPlayer opens the movie's host path (the file protocol) or reads through the game's own I/O
 # callbacks; no network protocol is built. The release then carries no FFmpeg DLLs or their codec
@@ -8,7 +8,7 @@
 #
 # A build of each platform is committed in prebuilt/ffmpeg-<os>.tar.xz with the version and options
 # it was configured with; when they match this script it is unpacked instead of built
-# (RESOGUN_FFMPEG_PREBUILT=0 builds from source anyway). --pack rebuilds from source and rewrites
+# (TEMPEST_FFMPEG_PREBUILT=0 builds from source anyway). --pack rebuilds from source and rewrites
 # that archive: run it on Ubuntu 24.04 (the Linux release's glibc;
 # tools/pack_ffmpeg_linux.sh does it in Docker) whenever the version or options change.
 #
@@ -44,7 +44,7 @@ fix_pc() {
     sed -i -e "s|^prefix=.*|prefix=$dir|" -e 's|^libdir=.*|libdir=${prefix}/lib|' \
         -e 's|^includedir=.*|includedir=${prefix}/include|' "$1"/lib/pkgconfig/*.pc
 }
-if ((!pack)) && [[ ${RESOGUN_FFMPEG_PREBUILT:-1} != 0 && -f $prebuilt ]]; then
+if ((!pack)) && [[ ${TEMPEST_FFMPEG_PREBUILT:-1} != 0 && -f $prebuilt ]]; then
     if [[ $(tar -xJOf "$prebuilt" ./.key) == "$key" ]]; then
         rm -rf "$prefix" && mkdir -p "$prefix"
         # -m: unpacked now, so the next build relinks against them (the archive holds no times).

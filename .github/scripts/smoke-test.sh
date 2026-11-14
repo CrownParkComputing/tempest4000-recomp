@@ -4,7 +4,7 @@
 # has (python3, the Vulkan loader, the X11/Wayland/audio libraries the release leaves to the host),
 # then checks without a game dump or a GPU:
 #   - the programs find every library (ldd) and start: a missing one or a too-new glibc stops them;
-#   - the game, never set up, says so; resogun-setup rejects a folder that is not a dump, and
+#   - the game, never set up, says so; tempest-setup rejects a folder that is not a dump, and
 #     with one that looks like a dump runs prepare/run.py through the system python3 to its end;
 #   - a set-up folder (paths.ini, game/) starts the game from it, logging to <save>/log.
 # Usage: smoke-test.sh <unpacked release folder>
@@ -36,41 +36,41 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 unset DISPLAY WAYLAND_DISPLAY
 cd "$release"
 
-for exe in resogun resogun-setup; do
+for exe in tempest tempest-setup; do
     [[ -x $exe ]] || fail "$exe is missing or not executable"
     if ldd "$exe" | grep 'not found'; then fail "$exe: libraries missing (above)"; fi
 done
 status=0
-./resogun --cpu-features || status=$?
-[[ $status == 0 || $status == 20 ]] || fail "resogun --cpu-features exited $status"
-usage=$(./resogun-setup --help 2>&1 || true)
-grep -q 'usage: resogun-setup' <<<"$usage" || fail "resogun-setup --help has no usage: $usage"
+./tempest --cpu-features || status=$?
+[[ $status == 0 || $status == 20 ]] || fail "tempest --cpu-features exited $status"
+usage=$(./tempest-setup --help 2>&1 || true)
+grep -q 'usage: tempest-setup' <<<"$usage" || fail "tempest-setup --help has no usage: $usage"
 
 work=$(mktemp -d)
 # Not set up: no paths.ini. No terminal (as from a file manager): the message goes to stderr.
 rm -f paths.ini
 status=0
-./resogun </dev/null >"$work/unset.log" 2>&1 || status=$?
+./tempest </dev/null >"$work/unset.log" 2>&1 || status=$?
 grep -q 'The game is not set up yet' "$work/unset.log" || { cat "$work/unset.log"; fail 'no "not set up" message'; }
-[[ $status == 1 ]] || fail "resogun without paths.ini exited $status"
+[[ $status == 1 ]] || fail "tempest without paths.ini exited $status"
 
 # A folder that is not a dump, then one that has the files the setup looks for (empty, so the
 # preparation itself fails, in python3).
 mkdir -p "$work/empty" "$work/dump/sce_sys" "$work/dump/sce_module"
 status=0
-./resogun-setup --game "$work/empty" --save "$work/save" >"$work/setup-empty.log" 2>&1 || status=$?
-grep -q "isn't a decrypted Resogun dump" "$work/setup-empty.log" ||
+./tempest-setup --game "$work/empty" --save "$work/save" >"$work/setup-empty.log" 2>&1 || status=$?
+grep -q "isn't a decrypted Tempest dump" "$work/setup-empty.log" ||
     { cat "$work/setup-empty.log"; fail 'the setup took a folder without eboot.bin'; }
 for f in eboot.bin sce_sys/param.sfo sce_module/libc.prx sce_module/libSceFios2.prx audio.pck stream.dat; do
     : >"$work/dump/$f"
 done
 status=0
-./resogun-setup --game "$work/dump" --save "$work/save" >"$work/setup-dump.log" 2>&1 || status=$?
+./tempest-setup --game "$work/dump" --save "$work/save" >"$work/setup-dump.log" 2>&1 || status=$?
 cat "$work/setup-dump.log"
 grep -q 'Preparing the game from' "$work/setup-dump.log" || fail 'the setup did not start preparing'
 grep -q 'Preparing the game failed (exit code' "$work/setup-dump.log" || fail 'the preparation did not run to its end'
 grep -q '^  ' "$work/setup-dump.log" || fail "no output of prepare/run.py reached the setup's log"
-[[ $status == 1 ]] || fail "resogun-setup with an empty dump exited $status"
+[[ $status == 1 ]] || fail "tempest-setup with an empty dump exited $status"
 [[ ! -e paths.ini ]] || fail 'a failed setup wrote paths.ini'
 
 # Set up by hand: the game starts from paths.ini and logs to <save>/log (no terminal). The boot file
@@ -81,12 +81,12 @@ printf 'not a boot file' >game/boot-linked.bin
 cp release.txt game/release.txt
 printf '[paths]\ngame=%s\nsave=%s\n' "$work/dump" "$work/save" >paths.ini
 status=0
-./resogun </dev/null >"$work/launch.out" 2>&1 || status=$?
-log=$work/save/log/resogun.log
+./tempest </dev/null >"$work/launch.out" 2>&1 || status=$?
+log=$work/save/log/tempest.log
 [[ -f $log ]] || { cat "$work/launch.out"; fail "no $log"; }
 cat "$log"
 grep -q "Launch: game $work/dump" "$log" || fail 'the game did not start from paths.ini'
-(( status != 0 && status < 128 )) || fail "resogun exited $status on a bad boot file (0 or a signal)"
+(( status != 0 && status < 128 )) || fail "tempest exited $status on a bad boot file (0 or a signal)"
 rm -rf game paths.ini
 
 echo "PASS: $(grep -m1 PRETTY_NAME /etc/os-release | cut -d= -f2)"

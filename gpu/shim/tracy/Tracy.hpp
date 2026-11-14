@@ -1,4 +1,4 @@
-// resogun: profiler disabled; Tracy macros compile to nothing.
+// tempest: profiler disabled; Tracy macros compile to nothing.
 #pragma once
 #include <cstddef>
 #include <cstdint>

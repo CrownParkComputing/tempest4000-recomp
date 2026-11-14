@@ -95,7 +95,7 @@ public:
                      bool preloading);
     ~GraphicsPipeline();
 
-    // resogun: switch from compiler-owned snapshots to live stage data on publication.
+    // tempest: switch from compiler-owned snapshots to live stage data on publication.
     void PublishStages(std::span<const Shader::Info*, MaxShaderStages> infos) {
         std::ranges::copy(infos, stages.begin());
     }
@@ -108,7 +108,7 @@ public:
         return key;
     }
 
-    /// resogun: second draw squaring a self-scaled MIN/MAX blend, or null (vk_blend_rewrite.h).
+    /// tempest: second draw squaring a self-scaled MIN/MAX blend, or null (vk_blend_rewrite.h).
     vk::Pipeline SquarePassHandle() const noexcept {
         return *square_pipeline;
     }

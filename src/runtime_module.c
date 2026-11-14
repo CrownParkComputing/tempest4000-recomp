@@ -162,7 +162,7 @@ static ABI int32_t kernel_dlsym(int32_t handle, const char *name, void **address
 static RuntimeModule main_module;
 void runtime_module_set_main(const RuntimeModule *m) { main_module=*m; }
 
-/* RESOGUN_THROW_TRACE=1: every C++ throw through libc.prx's __cxa_throw prints the thrown type
+/* TEMPEST_THROW_TRACE=1: every C++ throw through libc.prx's __cxa_throw prints the thrown type
  * and the guest backtrace. The modules'
  * pointer slots bound to __cxa_throw get throw_thunk instead, which logs and then jumps on, so no
  * host frame is on the stack while the guest unwinds. */
@@ -192,7 +192,7 @@ __asm__(".text\n.globl throw_thunk\nthrow_thunk:\n"
         "pop %rdx\npop %rsi\npop %rdi\n"
         "jmp *real_throw(%rip)\n");
 void runtime_throw_trace_install(void) {
-    const char *e=getenv("RESOGUN_THROW_TRACE");
+    const char *e=getenv("TEMPEST_THROW_TRACE");
     if (!e || e[0]!='1' || !image) return;
     for (uint64_t i=0;i<module_count && !real_throw;++i)
         if (!strcmp(modules[i].name,"libc.prx"))

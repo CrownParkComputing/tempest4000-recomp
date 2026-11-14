@@ -7,7 +7,7 @@
 #include <chrono>
 #include <cstdlib>
 
-#include "resogun_toggles.h"
+#include "tempest_toggles.h"
 #include "common/div_ceil.h"
 #include "common/logging/log.h"
 #include "core/emulator_settings.h"
@@ -108,14 +108,14 @@ public:
         }
     }
 
-    /// resogun: diagnostics (Rasterizer::ReloadOnTrigger). Every page the GPU did not write
+    /// tempest: diagnostics (Rasterizer::ReloadOnTrigger). Every page the GPU did not write
     /// becomes CPU modified, as if the guest had rewritten it: it is uploaded again when bound.
     void MarkUnwrittenCpuModified() {
         cpu |= ~gpu;
         UpdateProtection<false, false>();
     }
 
-    /// resogun: after a guest write fault, also unprotects the other pages of the window that
+    /// tempest: after a guest write fault, also unprotects the other pages of the window that
     /// are protected for CPU writes and hold no GPU-modified data (see MarkFaultWindow).
     void ExtendWriteFault(VAddr window_addr, u64 size) {
         const size_t offset = window_addr - cpu_addr;
@@ -153,11 +153,11 @@ public:
         }
 
         RegionBits& bits = GetRegionBits<type>();
-        // resogun: nothing modified in the range means nothing to clear or re-protect (CPU bits
+        // tempest: nothing modified in the range means nothing to clear or re-protect (CPU bits
         // always match `writeable` after a change); this runs for every buffer binding, so
         // it is checked before building the range mask.
         if (type == Type::CPU && !bits.AnyInRange(start_page, end_page) &&
-            !ResogunToggle::Disabled(ResogunToggle::PageTrackingEarlyExit)) {
+            !TempestToggle::Disabled(TempestToggle::PageTrackingEarlyExit)) {
             return;
         }
         RegionBits mask(bits, start_page, end_page);
@@ -224,18 +224,18 @@ private:
         tracker->UpdatePageWatchersForRegion<track, is_read>(cpu_addr, mask);
     }
 
-    // resogun: pages the guest writes again and again (per-frame constants) cost a protection
+    // tempest: pages the guest writes again and again (per-frame constants) cost a protection
     // fault in the writing thread plus an mprotect with TLB shootdowns on every upload. After
     // HotFaults faults a page stays writable and counts as always CPU modified, so it is
     // uploaded on every use instead. The set is rebuilt every HotPeriod. Opt-in
-    // (RESOGUN_HOT_PAGES=1): a large set is re-uploaded on every binding, which can cost more
+    // (TEMPEST_HOT_PAGES=1): a large set is re-uploaded on every binding, which can cost more
     // than the faults it saves.
     static bool HotPagesEnabled() {
         static const bool enabled = [] {
-            const char* env = std::getenv("RESOGUN_HOT_PAGES");
+            const char* env = std::getenv("TEMPEST_HOT_PAGES");
             return env && env[0] == '1';
         }();
-        return enabled && !ResogunToggle::Disabled(ResogunToggle::HotPages);
+        return enabled && !TempestToggle::Disabled(TempestToggle::HotPages);
     }
     // A short period re-protects thousands of pages at once and each faults again before it is
     // hot, a fault storm (a 2 s period gave ~20k faults/s and frame spikes).
@@ -248,7 +248,7 @@ private:
             if (writeable.Get(page)) {
                 continue; // not protected: no fault
             }
-            ResogunStats::tracker_faults.fetch_add(1, std::memory_order_relaxed);
+            TempestStats::tracker_faults.fetch_add(1, std::memory_order_relaxed);
             if (!hot_enabled) {
                 continue;
             }
@@ -262,7 +262,7 @@ private:
                 }
                 hot.Set(page);
                 ++num_hot;
-                ResogunStats::hot_pages.fetch_add(1, std::memory_order_relaxed);
+                TempestStats::hot_pages.fetch_add(1, std::memory_order_relaxed);
             }
         }
     }
@@ -274,7 +274,7 @@ private:
         if (!HotPagesEnabled() ||
             std::chrono::steady_clock::now() - hot_since > HotPeriod) {
             // Re-protect them (on this upload) and start counting again.
-            ResogunStats::hot_pages.fetch_sub(num_hot, std::memory_order_relaxed);
+            TempestStats::hot_pages.fetch_sub(num_hot, std::memory_order_relaxed);
             hot.Clear();
             write_faults.fill(0);
             num_hot = 0;

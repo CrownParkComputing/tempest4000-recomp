@@ -22,11 +22,11 @@ git clone --recurse-submodules <repository URL>
 
 `build.sh` fetches the submodules itself if the clone was made without them. The runner links a
 small static FFmpeg (9.0.2; `tools/build_ffmpeg.sh`): only the H.264, AAC and PNG decoders, the MP4
-demuxer and the file protocol, which is all Resogun's movies and the save icons need. A build of it
+demuxer and the file protocol, which is all Tempest's movies and the save icons need. A build of it
 is committed in `prebuilt/ffmpeg-linux.tar.xz`, and the first build unpacks it into `out/ffmpeg`. If that archive was made
 with another version or options than the script names, FFmpeg's source is downloaded (checked
 against its SHA-256) and built instead, which takes a few minutes; `nasm` gives it its x86 assembly
-(without it, decoding is slower). `RESOGUN_FFMPEG_PREBUILT=0` always builds from source.
+(without it, decoding is slower). `TEMPEST_FFMPEG_PREBUILT=0` always builds from source.
 
 After changing FFmpeg's version or options, rewrite the archive and commit it with
 `bash tools/pack_ffmpeg_linux.sh`, which builds in an Ubuntu 24.04 container (Docker) so the
@@ -40,8 +40,8 @@ At the repository root:
 bash build.sh
 ```
 
-It writes `out/resogun` (loader, runtime and GPU library in one binary, linked without PIE: host
-pointers handed to the game must stay below 1 TiB) and `out/resogun-setup`. Both are RelWithDebInfo
+It writes `out/tempest` (loader, runtime and GPU library in one binary, linked without PIE: host
+pointers handed to the game must stay below 1 TiB) and `out/tempest-setup`. Both are RelWithDebInfo
 builds and carry their debug info (about 120 MB of the game binary) for debuggers and
 `llvm-addr2line`. A failed build prints its last lines; the full log is
 `out/gpu-build.log`.
@@ -70,7 +70,7 @@ For local work, `build_linux.sh` wraps the steps above:
 ```
 
 Without options it builds. `--test` also runs the Python tests, `--run` starts the game for
-`--timeout` seconds (20 by default; `RESOGUN_GAME_DIR` names the dump when `--game` is left out)
+`--timeout` seconds (20 by default; `TEMPEST_GAME_DIR` names the dump when `--game` is left out)
 and prints its first `STOP:` or `Fault:` line, with the full log in `out/boot.log`. `--package`
 writes the release (section 5), and `--clean` removes `out/` first. It picks `clang-18`-style
 compiler names when there is no plain `clang`.
@@ -80,7 +80,7 @@ In WSL the game runs on Mesa's software Vulkan (llvmpipe): slow, but enough for 
 ## 4. Run from the source tree
 
 Point `run.py` at your decrypted dump (CUSA00038, version 1.10: `eboot.bin`, `sce_module`,
-`sce_sys`, `audio.pck`, `stream.dat`) with `--game DIR` or `RESOGUN_GAME_DIR`:
+`sce_sys`, `audio.pck`, `stream.dat`) with `--game DIR` or `TEMPEST_GAME_DIR`:
 
 ```bash
 python run.py --game <dump> --timeout 20
@@ -107,11 +107,11 @@ and it plays. Packaging into it again keeps what the setup wrote there (`game/`,
 ### Symbols for release crashes
 
 A release `--zip` also writes `out/<release>-linux-symbols.tar.gz` with the unstripped programs of
-that build; it is not for players. Resolve an offset in a player's `resogun.log` with the symbols of
+that build; it is not for players. Resolve an offset in a player's `tempest.log` with the symbols of
 the same release (named in their `release.txt`):
 
 ```bash
-llvm-addr2line -fCe resogun 0x1234ab
+llvm-addr2line -fCe tempest 0x1234ab
 ```
 
 ## 6. CI and releases

@@ -1,15 +1,15 @@
-// resogun: glue between the C loader and the vendored shadPS4 video core.
-#include "resogun_overlay.h"
-#include "resogun_png.h"
-#include "resogun_settings.h"
-#include "resogun_graphics.h"
-#include "resogun_copy.h"
+// tempest: glue between the C loader and the vendored shadPS4 video core.
+#include "tempest_overlay.h"
+#include "tempest_png.h"
+#include "tempest_settings.h"
+#include "tempest_graphics.h"
+#include "tempest_copy.h"
 #ifdef _WIN32
 #include <dxgi.h>
 #else
 #include <sys/resource.h>
 #endif
-#include "resogun_toggles.h"
+#include "tempest_toggles.h"
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
@@ -23,7 +23,7 @@
 #include <thread>
 #include <vector>
 #include <SDL3/SDL.h>
-#include "../resogun_gpu.h"
+#include "../tempest_gpu.h"
 #include "common/elf_info.h"
 #include "common/logging/log.h"
 #include "core/libraries/kernel/orbis_error.h"
@@ -72,7 +72,7 @@ namespace Libraries::CommonDialog {
 bool g_isInitialized = false;
 bool g_isUsed = false;
 } // namespace Libraries::CommonDialog
-extern "C" void resogun_gpu_common_dialog_initialized(void) {
+extern "C" void tempest_gpu_common_dialog_initialized(void) {
     Libraries::CommonDialog::g_isInitialized = true;
 }
 namespace Libraries::Kernel { void RegisterEventQueue(Core::Loader::SymbolsResolver* sym); }
@@ -97,7 +97,7 @@ void SymbolsResolver::AddSymbol(const char* nid, const char* library, const char
 namespace Core {
 class Emulator {
 public:
-    static void FillElfInfo(const ResogunGpuConfig& config) {
+    static void FillElfInfo(const TempestGpuConfig& config) {
         auto& info = Common::ElfInfo::Instance();
         info.initialized = true;
         info.game_serial = config.serial ? config.serial : "UNKNOWN";
@@ -127,18 +127,18 @@ void MemoryManager::InvalidateMemory(VAddr address, u64 size) {
 u64 MemoryManager::ClampRangeSize(VAddr virtual_addr, u64 size) {
     return runtime_memory_clamp(virtual_addr, size);
 }
-// Through the backing view: with RESOGUN_READBACKS=2 (precise) GPU-written pages are also
+// Through the backing view: with TEMPEST_READBACKS=2 (precise) GPU-written pages are also
 // read-protected, and a copy thread faulting there would wait for the GPU thread waiting for it.
 static void CopySparseSerial(VAddr source, u8* dest, u64 size) {
     runtime_memory_read_backing(source, dest, size);
 }
 void MemoryManager::CopySparseMemory(VAddr source, u8* dest, u64 size) {
-    // resogun: large uploads (streaming) are split across the copy threads.
+    // tempest: large uploads (streaming) are split across the copy threads.
     constexpr u64 Chunk = 512 * 1024;
-    if (size < 4 * Chunk || !ResogunCopy::Enabled()) {
+    if (size < 4 * Chunk || !TempestCopy::Enabled()) {
         return CopySparseSerial(source, dest, size);
     }
-    ResogunCopy::ParallelFor((size + Chunk - 1) / Chunk, [&](std::size_t i) {
+    TempestCopy::ParallelFor((size + Chunk - 1) / Chunk, [&](std::size_t i) {
         const u64 offset = i * Chunk;
         CopySparseSerial(source + offset, dest + offset, std::min(Chunk, size - offset));
     });
@@ -154,13 +154,13 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     return written;
 }
 void AddressSpace::Protect(VAddr virtual_addr, u64 size, MemoryPermission perms) {
-    ResogunStats::Timer timer{ResogunStats::t_protect};
+    TempestStats::Timer timer{TempestStats::t_protect};
     const u64 pages = (size + 4095) / 4096;
-    ResogunStats::protect_calls.fetch_add(1, std::memory_order_relaxed);
-    ResogunStats::protect_pages.fetch_add(pages, std::memory_order_relaxed);
+    TempestStats::protect_calls.fetch_add(1, std::memory_order_relaxed);
+    TempestStats::protect_pages.fetch_add(pages, std::memory_order_relaxed);
     if (!True(perms & MemoryPermission::Write)) {
-        ResogunStats::protect_revoke_calls.fetch_add(1, std::memory_order_relaxed);
-        ResogunStats::protect_revoke_pages.fetch_add(pages, std::memory_order_relaxed);
+        TempestStats::protect_revoke_calls.fetch_add(1, std::memory_order_relaxed);
+        TempestStats::protect_revoke_pages.fetch_add(pages, std::memory_order_relaxed);
     }
     runtime_memory_gpu_protect(virtual_addr, size, True(perms & MemoryPermission::Read),
                                True(perms & MemoryPermission::Write));
@@ -179,7 +179,7 @@ u64 PS4_SYSV_ABI sceKernelReadTsc() { return runtime_read_tsc(); }
 u64 PS4_SYSV_ABI sceKernelGetProcessTime() { return runtime_process_time_us(); }
 u64 PS4_SYSV_ABI sceKernelGetProcessTimeCounter() { return runtime_process_time_counter(); }
 u64 PS4_SYSV_ABI sceKernelGetProcessTimeCounterFrequency() { return 1'000'000'000; }
-s32 PS4_SYSV_ABI sceKernelIsNeoMode() { return resogun_render_4k(); } // PS4 Pro with render_resolution=4k
+s32 PS4_SYSV_ABI sceKernelIsNeoMode() { return tempest_render_4k(); } // PS4 Pro with render_resolution=4k
 s32 PS4_SYSV_ABI sceKernelGetCompiledSdkVersion(s32* ver) {
     if (!ver) return ORBIS_KERNEL_ERROR_EINVAL;
     *ver = s32(g_sdk_version);
@@ -199,7 +199,7 @@ std::condition_variable g_window_cv;
 bool g_window_ready;
 } // namespace
 
-double ResogunWindowRefreshRate() {
+double TempestWindowRefreshRate() {
     SDL_DisplayID display = g_window ? SDL_GetDisplayForWindow(g_window->GetSDLWindow()) : 0;
     if (!display) display = SDL_GetPrimaryDisplay();
     const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display);
@@ -211,7 +211,7 @@ double ResogunWindowRefreshRate() {
 }
 
 // The DXGI output of the window's monitor, per calling thread, found again when the window moves.
-bool ResogunWaitForVblank() {
+bool TempestWaitForVblank() {
 #ifdef _WIN32
     thread_local IDXGIOutput* output = nullptr;
     thread_local HMONITOR monitor = nullptr;
@@ -248,17 +248,17 @@ bool ResogunWaitForVblank() {
 #endif
 }
 
-extern "C" int resogun_gpu_init(const ResogunGpuConfig* config) {
-    ResogunSettings::Load();
+extern "C" int tempest_gpu_init(const TempestGpuConfig* config) {
+    TempestSettings::Load();
     g_sdk_version = config->sdk_version;
 #ifdef _WIN32
-    if (config->user_dir && !std::getenv("RESOGUN_GPU_USER_DIR")) _putenv_s("RESOGUN_GPU_USER_DIR", config->user_dir);
+    if (config->user_dir && !std::getenv("TEMPEST_GPU_USER_DIR")) _putenv_s("TEMPEST_GPU_USER_DIR", config->user_dir);
 #else
-    if (config->user_dir) setenv("RESOGUN_GPU_USER_DIR", config->user_dir, 0);
+    if (config->user_dir) setenv("TEMPEST_GPU_USER_DIR", config->user_dir, 0);
 #endif
     Core::Emulator::FillElfInfo(*config);
     // The window carries the project name; the dump's own title stays in ElfInfo (above).
-    const std::string title = "Resogun";
+    const std::string title = "Tempest";
     const s32 width = config->width, height = config->height;
     g_window_thread = std::thread([title, width, height] {
         Common::SetCurrentThreadName("runner:window");
@@ -273,7 +273,7 @@ extern "C" int resogun_gpu_init(const ResogunGpuConfig* config) {
             SDL_Delay(2);
         }
         LOG_INFO(Frontend, "Window closed by user");
-        ResogunSettings::SaveDisplayIfChanged();
+        TempestSettings::SaveDisplayIfChanged();
         runtime_report();
         std::fflush(stdout);
         std::_Exit(0);
@@ -281,9 +281,9 @@ extern "C" int resogun_gpu_init(const ResogunGpuConfig* config) {
     g_window_thread.detach();
     // The PS4 shows the game's pic1.png while it starts; decoded while the window opens.
     if (config->splash) {
-        ResogunPng::Image splash;
-        if (ResogunPng::LoadRgba(config->splash, splash)) {
-            ResogunOverlay::SetSplash(std::move(splash));
+        TempestPng::Image splash;
+        if (TempestPng::LoadRgba(config->splash, splash)) {
+            TempestOverlay::SetSplash(std::move(splash));
         }
     }
     {
@@ -298,7 +298,7 @@ extern "C" int resogun_gpu_init(const ResogunGpuConfig* config) {
 }
 
 namespace Libraries::Kernel { void StartKernelService(); }
-extern "C" void resogun_gpu_register_kernel(void) {
+extern "C" void tempest_gpu_register_kernel(void) {
     Libraries::Kernel::StartKernelService();
     Core::Loader::SymbolsResolver resolver;
     Libraries::Kernel::RegisterEventQueue(&resolver);
@@ -312,7 +312,7 @@ extern "C" void resogun_gpu_register_kernel(void) {
     Libraries::ScreenShot::RegisterLib(&resolver);
 }
 
-extern "C" uintptr_t resogun_gpu_resolve(const char* scoped_nid) {
+extern "C" uintptr_t tempest_gpu_resolve(const char* scoped_nid) {
     const char* hash = std::strchr(scoped_nid, '#');
     const size_t length = hash ? size_t(hash - scoped_nid) : std::strlen(scoped_nid);
     for (const auto& symbol : g_symbols) {
@@ -323,16 +323,16 @@ extern "C" uintptr_t resogun_gpu_resolve(const char* scoped_nid) {
     return 0;
 }
 
-extern "C" int resogun_gpu_handle_fault(void* ucontext, void* address) {
+extern "C" int tempest_gpu_handle_fault(void* ucontext, void* address) {
     return Core::Signals::Instance()->DispatchAccessViolation(ucontext, address) ? 1 : 0;
 }
 
-extern "C" unsigned resogun_gpu_symbol_count(void) {
+extern "C" unsigned tempest_gpu_symbol_count(void) {
     return unsigned(g_symbols.size());
 }
 
-extern "C" unsigned long long resogun_gpu_copy_yields(void) {
-    return ResogunCopy::Yields();
+extern "C" unsigned long long tempest_gpu_copy_yields(void) {
+    return TempestCopy::Yields();
 }
 
 // Kernel service thread: runs boost::asio timers for equeue timer events.
@@ -350,7 +350,7 @@ void KernelSignalRequest() {
 }
 
 static void KernelServiceThread(std::stop_token stoken) {
-    Common::SetCurrentThreadName("resogun:kernel_service");
+    Common::SetCurrentThreadName("tempest:kernel_service");
     while (!stoken.stop_requested()) {
         {
             std::unique_lock lock{m_asio_req};
@@ -398,72 +398,72 @@ ScreenshotRequests ConsumeScreenshotRequests() {
 }
 } // namespace VideoCore
 
-extern "C" int resogun_gpu_audio_channels(void) {
-    return ResogunSettings::Get().audio_channels.load(std::memory_order_relaxed);
+extern "C" int tempest_gpu_audio_channels(void) {
+    return TempestSettings::Get().audio_channels.load(std::memory_order_relaxed);
 }
 
-extern "C" int resogun_gpu_overlay_captures_input(void) {
-    return ResogunOverlay::CapturesInput() ? 1 : 0;
+extern "C" int tempest_gpu_overlay_captures_input(void) {
+    return TempestOverlay::CapturesInput() ? 1 : 0;
 }
 
-extern "C" void resogun_display_settings_open(void) {
-    ResogunOverlay::OpenDisplaySettings();
+extern "C" void tempest_display_settings_open(void) {
+    TempestOverlay::OpenDisplaySettings();
 }
 
-extern "C" int resogun_display_settings_is_open(void) {
-    return ResogunOverlay::DisplaySettingsOpen() ? 1 : 0;
+extern "C" int tempest_display_settings_is_open(void) {
+    return TempestOverlay::DisplaySettingsOpen() ? 1 : 0;
 }
 
-extern "C" void resogun_exit_prompt_open(void) {
-    ResogunOverlay::OpenExitPrompt();
+extern "C" void tempest_exit_prompt_open(void) {
+    TempestOverlay::OpenExitPrompt();
 }
 
-extern "C" void resogun_gpu_request_quit(void) {
+extern "C" void tempest_gpu_request_quit(void) {
     SDL_Event event{};
     event.type = SDL_EVENT_QUIT; // the window thread ends the process as when the window is closed
     SDL_PushEvent(&event);
 }
 
-extern "C" int resogun_gpu_text_input_begin(const char* initial, const char* prompt) {
+extern "C" int tempest_gpu_text_input_begin(const char* initial, const char* prompt) {
     if (!g_window) return 0;
     g_window->BeginTextInput(initial ? initial : "", prompt ? prompt : "Text");
     return 1;
 }
 
-extern "C" int resogun_gpu_choice_begin(const char* title, const char* const* items, const char* const* images,
+extern "C" int tempest_gpu_choice_begin(const char* title, const char* const* items, const char* const* images,
                                     int count, int focus) {
     if (!g_window || count <= 0) return 0;
     // Pictures are decoded here, on the game's thread, before the list is shown.
-    std::vector<ResogunPng::Image> pictures(count);
+    std::vector<TempestPng::Image> pictures(count);
     for (int i = 0; images && i < count; ++i) {
-        if (images[i] && !ResogunPng::LoadRgba(images[i], pictures[i])) {
+        if (images[i] && !TempestPng::LoadRgba(images[i], pictures[i])) {
             LOG_WARNING(Lib_SaveDataDialog, "save list: no picture from {}", images[i]);
         }
     }
-    ResogunOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
+    TempestOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
                              std::move(pictures), focus);
     return 1;
 }
 
-extern "C" int resogun_gpu_choice_poll(void) {
-    return ResogunOverlay::PollChoice();
+extern "C" int tempest_gpu_choice_poll(void) {
+    return TempestOverlay::PollChoice();
 }
 
-extern "C" int resogun_gpu_choice_confirm(const char* title, const char* const* items, int count, int focus,
+extern "C" int tempest_gpu_choice_confirm(const char* title, const char* const* items, int count, int focus,
                                            const unsigned char* png, uint64_t size, const char* caption, const char* unavailable) {
     if (!g_window || !items || count <= 0) return 0;
-    ResogunPng::Image preview;
+    TempestPng::Image preview;
     std::string label = caption ? caption : "";
-    if (!png || !size || size > 4u * 1024u * 1024u || !ResogunPng::DecodeRgba(png, size, preview)) {
+    if (!png || !size || size > 4u * 1024u * 1024u || !TempestPng::DecodeRgba(png, size, preview)) {
         label += "\n";
         label += unavailable ? unavailable : "";
     }
-    ResogunOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
-                               std::vector<ResogunPng::Image>(count), focus, label, std::move(preview));
+    TempestOverlay::BeginChoice(title ? title : "", std::vector<std::string>(items, items + count),
+                               std::vector<TempestPng::Image>(count), focus, label, std::move(preview));
     return 1;
 }
 
-extern "C" int resogun_gpu_text_input_poll(char* out, uint64_t size) {
+extern "C" int tempest_gpu_text_input_poll(char* out, uint64_t size) {
     if (!g_window) return 2;
     std::string text;
     const int state = g_window->PollTextInput(text);

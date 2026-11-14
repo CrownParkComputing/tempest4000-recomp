@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-HOST_EXE = ROOT / ('out/resogun' + ('.exe' if sys.platform == 'win32' else ''))
+HOST_EXE = ROOT / ('out/tempest' + ('.exe' if sys.platform == 'win32' else ''))
 
 
 def package(code, relocs=(), names=(), capabilities=None):
@@ -35,7 +35,7 @@ def native_package(name='fixture-native', binding_address=4112, binding_kind=1,
             + struct.pack('<8Q',32,1,0,0,40,1,1,0) + image)
 
 
-@unittest.skipUnless(HOST_EXE.exists(), 'build resogun first')
+@unittest.skipUnless(HOST_EXE.exists(), 'build tempest first')
 class LoaderTests(unittest.TestCase):
     def test_invalid_content_profile_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,7 +166,7 @@ def host_env():
     return env
 
 
-@unittest.skipUnless(HOST_EXE.exists(), 'build resogun first')
+@unittest.skipUnless(HOST_EXE.exists(), 'build tempest first')
 class CpuFeaturesTests(unittest.TestCase):
     def test_cpu_features_mode_reports_this_machine(self):
         result = subprocess.run([str(HOST_EXE.resolve()), '--cpu-features'], capture_output=True, text=True, env=host_env())
@@ -174,7 +174,7 @@ class CpuFeaturesTests(unittest.TestCase):
         self.assertRegex(result.stdout, r'^CPU: (complete|missing [A-Z0-9., ]+)\n$')
 
 
-@unittest.skipUnless(HOST_EXE.exists(), 'build resogun first')
+@unittest.skipUnless(HOST_EXE.exists(), 'build tempest first')
 class GamepadAndMountTests(unittest.TestCase):
     def test_gamepad_mode_prints_exactly_one_line(self):
         # With or without a controller attached: "Gamepad: none" or the described pad.

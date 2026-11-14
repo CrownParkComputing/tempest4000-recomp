@@ -9,7 +9,7 @@
 #include "runtime.h"
 #include "cpu_check.h"
 #include "isa_rewrite.h"
-#include "gpu/resogun_gpu.h"
+#include "gpu/tempest_gpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
 #endif
@@ -48,7 +48,7 @@ static unsigned cpu_missing_sets; /* CPU_SET_* the host lacks; the guest code ne
 static IsaTable *isa_table; /* rewritten sites (--isa-rewrite); the fault handlers and the report read it */
 static void loader_report_hook(void) {
     if (isa_table) isa_rewrite_report(isa_table, stdout);
-    if (gpu_enabled) printf("GPU: copy waits yielded %llu times\n", resogun_gpu_copy_yields());
+    if (gpu_enabled) printf("GPU: copy waits yielded %llu times\n", tempest_gpu_copy_yields());
 }
 int vulkan_smoke(void);
 
@@ -183,17 +183,17 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
     }
     if (code==EXCEPTION_ACCESS_VIOLATION && record->NumberParameters>=2) {
         /* GPU page tracking (write-protected guest pages) is resolved first. */
-        if (gpu_enabled && resogun_gpu_handle_fault(info,(void *)record->ExceptionInformation[1])) return EXCEPTION_CONTINUE_EXECUTION;
+        if (gpu_enabled && tempest_gpu_handle_fault(info,(void *)record->ExceptionInformation[1])) return EXCEPTION_CONTINUE_EXECUTION;
         if (runtime_fault_recover) {
             /* A speculative guest memory read (GPU draw preparation) faulted: the thread resumes
-             * in resogun_longjmp, outside the exception dispatcher, back at its recovery point. */
+             * in tempest_longjmp, outside the exception dispatcher, back at its recovery point. */
             unsigned long long *buffer=*runtime_fault_recover;
             runtime_fault_recover=NULL;
             CONTEXT *c=info->ContextRecord;
             c->Rsp=((c->Rsp-128)&~(DWORD64)15)-40;
             c->Rcx=(DWORD64)(uintptr_t)buffer;
             c->Rdx=1;
-            c->Rip=(DWORD64)(uintptr_t)resogun_longjmp;
+            c->Rip=(DWORD64)(uintptr_t)tempest_longjmp;
             return EXCEPTION_CONTINUE_EXECUTION;
         }
     }
@@ -208,7 +208,7 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
                  !module;
         if (ours) return fatal_exception(info);
     }
-    /* RESOGUN_STRICT_HANDLES=1: a closed or invalid handle used anywhere is reported (diagnostics). */
+    /* TEMPEST_STRICT_HANDLES=1: a closed or invalid handle used anywhere is reported (diagnostics). */
     if (code==0xC0000008 /* STATUS_INVALID_HANDLE */) return fatal_exception(info);
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -249,7 +249,7 @@ static void fault(int sig, siginfo_t *info, void *context) {
         }
     }
     /* GPU page tracking (write-protected guest pages) is resolved first. */
-    if (gpu_enabled && sig == SIGSEGV && resogun_gpu_handle_fault(context, info->si_addr)) return;
+    if (gpu_enabled && sig == SIGSEGV && tempest_gpu_handle_fault(context, info->si_addr)) return;
     /* A speculative guest memory read (runtime_memory.c) failed: resume its recovery point. */
     if ((sig == SIGSEGV || sig == SIGBUS) && runtime_fault_recover) {
         sigjmp_buf *recover = runtime_fault_recover;
@@ -359,7 +359,7 @@ static void watchdog(int sig, siginfo_t *info, void *context) {
 }
 static void hang_dump(unsigned seconds) {
     fprintf(stderr,"Hang: no new frame for %u s; each thread's frames follow (image-relative: guest offset, "
-            "host-relative: offset in the exe; RESOGUN_HANG_DUMP=0 turns this off)\n",seconds);
+            "host-relative: offset in the exe; TEMPEST_HANG_DUMP=0 turns this off)\n",seconds);
     dump_other_threads(1);
     usleep(100000);
     fprintf(stderr,"Hang: end of thread stacks\n");
@@ -442,7 +442,7 @@ static void dump_threads(void) {
 }
 static void hang_dump(unsigned seconds) {
     fprintf(stderr,"Hang: no new frame for %u s; each thread's frames follow, innermost first "
-            "(RESOGUN_HANG_DUMP=0 turns this off)\n",seconds);
+            "(TEMPEST_HANG_DUMP=0 turns this off)\n",seconds);
     dump_threads();
     fprintf(stderr,"Hang: end of thread stacks\n");
     fflush(NULL);
@@ -456,7 +456,7 @@ static DWORD WINAPI watchdog_thread(void *seconds) {
     _exit(128+14);
 }
 #endif
-/* Hang dump (RESOGUN_HANG_DUMP=seconds, default 20, 0 off): once a frame has been shown, a
+/* Hang dump (TEMPEST_HANG_DUMP=seconds, default 20, 0 off): once a frame has been shown, a
  * picture held that long logs every thread's frames, once until frames move again. Players' logs
  * then show where a frozen game waits. */
 static unsigned hang_seconds;
@@ -470,7 +470,7 @@ static void hang_watch_loop(void) {
 #else
         sleep(1);
 #endif
-        const unsigned long long shown=resogun_gpu_flips();
+        const unsigned long long shown=tempest_gpu_flips();
         if (shown!=last) { last=shown; held=0; dumped=0; continue; }
         if (!shown || dumped || ++held<hang_seconds) continue;
         hang_dump(hang_seconds);
@@ -478,12 +478,12 @@ static void hang_watch_loop(void) {
     }
 }
 #ifdef _WIN32
-static DWORD WINAPI hang_watch(void *unused) { (void)unused; SetThreadDescription(GetCurrentThread(),L"resogun:HangWatch"); hang_watch_loop(); return 0; }
+static DWORD WINAPI hang_watch(void *unused) { (void)unused; SetThreadDescription(GetCurrentThread(),L"tempest:HangWatch"); hang_watch_loop(); return 0; }
 #else
 static void *hang_watch(void *unused) { (void)unused; pthread_setname_np(pthread_self(),"HangWatch"); hang_watch_loop(); return NULL; }
 #endif
 static void start_hang_watch(void) {
-    const char *env=getenv("RESOGUN_HANG_DUMP");
+    const char *env=getenv("TEMPEST_HANG_DUMP");
     hang_seconds=env && *env ? (unsigned)strtoul(env,NULL,10) : 20;
     if (!hang_seconds) return;
 #ifdef _WIN32
@@ -553,12 +553,12 @@ void runtime_restart(void) {
 }
 #endif
 
-/* The guest code needs the PS4's instruction sets; RESOGUN_CPU_CHECK=0 skips this. A
+/* The guest code needs the PS4's instruction sets; TEMPEST_CPU_CHECK=0 skips this. A
  * missing fatal set prints STOP and returns 0; the rewritable ones go to cpu_missing_sets, named
  * in missing. */
 static int cpu_supported(char *missing, size_t size) {
     missing[0] = 0;
-    const char *check = getenv("RESOGUN_CPU_CHECK");
+    const char *check = getenv("TEMPEST_CPU_CHECK");
     if (check && !strcmp(check, "0")) return 1;
     const CpuFeatureWords words = cpu_feature_words();
     if (cpu_missing_fatal(words, missing, size)) {
@@ -636,11 +636,11 @@ int main(int argc, char **argv) {
     }
     if (!cpu_supported(missing, sizeof missing)) return 20;
     if (cpu_missing_sets) printf("CPU: missing %s\n", missing);
-    /* RESOGUN_ISA_REWRITE=0 never rewrites, =1 rewrites every site; by default the sets the CPU lacks. */
-    const char *policy = getenv("RESOGUN_ISA_REWRITE");
+    /* TEMPEST_ISA_REWRITE=0 never rewrites, =1 rewrites every site; by default the sets the CPU lacks. */
+    const char *policy = getenv("TEMPEST_ISA_REWRITE");
     unsigned isa_sets = policy && !strcmp(policy, "1") ? 0xffffffffu : policy && !strcmp(policy, "0") ? 0 : cpu_missing_sets;
     if (cpu_missing_sets && !isa_sets) {
-        printf("STOP: this CPU lacks %s and the rewrite is disabled (RESOGUN_ISA_REWRITE=0)\n", missing);
+        printf("STOP: this CPU lacks %s and the rewrite is disabled (TEMPEST_ISA_REWRITE=0)\n", missing);
         return 20;
     }
     if (cpu_missing_sets && !isa_file) {
@@ -664,9 +664,9 @@ int main(int argc, char **argv) {
         runtime_file_configure(app0, user_dir ? user_dir : "user");
         if (user_dir && user_dir[0]) {
 #ifdef _WIN32
-            _putenv_s("RESOGUN_USER_DIR", user_dir);
+            _putenv_s("TEMPEST_USER_DIR", user_dir);
 #else
-            setenv("RESOGUN_USER_DIR", user_dir, 1);
+            setenv("TEMPEST_USER_DIR", user_dir, 1);
 #endif
         }
         for (int i = 0; i < mount_count; ++i) {
@@ -687,17 +687,17 @@ int main(int argc, char **argv) {
         runtime_game_identify(title_id,version,app0,argv[1]);
         if (dlc_dir && dlc_dir[0]) runtime_content_extra_dir(dlc_dir, title_id[0] ? title_id : NULL);
     }
-    resogun_gpu_register_kernel();
+    tempest_gpu_register_kernel();
 #ifdef _WIN32
     SYSTEM_INFO system_info; GetSystemInfo(&system_info); page_size = system_info.dwPageSize;
     AddVectoredExceptionHandler(1, vectored_fault);
     SetUnhandledExceptionFilter(unhandled_fault);
-    if (getenv("RESOGUN_STRICT_HANDLES")) {
+    if (getenv("TEMPEST_STRICT_HANDLES")) {
         PROCESS_MITIGATION_STRICT_HANDLE_CHECK_POLICY strict={0};
         strict.RaiseExceptionOnInvalidHandleReference=1;
         strict.HandleExceptionsPermanentlyEnabled=1;
         if (!SetProcessMitigationPolicy(ProcessStrictHandleCheckPolicy,&strict,sizeof(strict)))
-            fprintf(stderr,"RESOGUN_STRICT_HANDLES: policy not set (%lu)\n",GetLastError());
+            fprintf(stderr,"TEMPEST_STRICT_HANDLES: policy not set (%lu)\n",GetLastError());
     }
     /* Watchdog: after --timeout seconds print every thread's frames and the runtime report and
      * end, as SIGALRM does below. 0 disables it. */
@@ -873,7 +873,7 @@ int main(int argc, char **argv) {
         return 20;
     }
     if (!cpu_only) {
-        char title[128]="Resogun", serial[16]="UNKNOWN", sfo[4096];
+        char title[128]="Tempest", serial[16]="UNKNOWN", sfo[4096];
         uint32_t attributes=0;
         snprintf(sfo,sizeof(sfo),"%s/sce_sys/param.sfo",app0 ? app0 : ".");
         sfo_value(sfo,"TITLE",title,sizeof(title),NULL);
@@ -883,13 +883,13 @@ int main(int argc, char **argv) {
         if (procparam) memcpy(&sdk,image+procparam+16,8); /* procparam: size, magic, count, sdk_version */
         char splash[4096];
         snprintf(splash,sizeof(splash),"%s/sce_sys/pic1.png",app0 ? app0 : ".");
-        ResogunGpuConfig gpu={title,serial,user_dir ? user_dir : "user",(uint32_t)sdk,attributes,1920,1080,
+        TempestGpuConfig gpu={title,serial,user_dir ? user_dir : "user",(uint32_t)sdk,attributes,1920,1080,
                                   app0 ? splash : NULL};
         gpu_enabled=1; /* page tracking starts while the rasterizer registers guest memory */
-        if (resogun_gpu_init(&gpu)) fail("GPU initialization failed");
-        printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,resogun_gpu_symbol_count());
+        if (tempest_gpu_init(&gpu)) fail("GPU initialization failed");
+        printf("GPU: window and Vulkan presenter ready; SDK 0x%08x, %u HLE symbols\n",(unsigned)sdk,tempest_gpu_symbol_count());
         start_hang_watch();
-        if (resogun_render_4k()) runtime_kernel_set_neo_mode(1);
+        if (tempest_render_4k()) runtime_kernel_set_neo_mode(1);
     }
     unsigned char *traps = allocate(round_page((import_count + 1) * 32));
     unsigned char *data_traps = allocate((import_count + 1) * page_size);
@@ -947,14 +947,14 @@ int main(int argc, char **argv) {
             fflush(NULL);
             _exit(20); /* no destructors: GPU threads are running */
         }
-        if (isa_sets == 0xffffffffu) printf("ISA: forced rewrite of all %u sites (RESOGUN_ISA_REWRITE=1), %u skipped\n", r.rewritten, r.skipped);
+        if (isa_sets == 0xffffffffu) printf("ISA: forced rewrite of all %u sites (TEMPEST_ISA_REWRITE=1), %u skipped\n", r.rewritten, r.skipped);
         else printf("ISA: CPU lacks %s: %u sites rewritten (%u jmp, %u relocated, %u int3), %u skipped\n",
                     missing, r.rewritten, r.jmp, r.relocated, r.int3, r.skipped);
         protect(stubs, stub_area, 5);
     }
     /* A 4:3, 16:10, 21:9 or 32:9 output: the engine is resized before its code runs (runtime_game.c). */
-    if (gpu_enabled && resogun_width_4k() != 3840 && !runtime_game_widen(image, (uint32_t)resogun_width_4k()))
-        resogun_set_width_4k(3840);
+    if (gpu_enabled && tempest_width_4k() != 3840 && !runtime_game_widen(image, (uint32_t)tempest_width_4k()))
+        tempest_set_width_4k(3840);
     runtime_set_report_hook(loader_report_hook);
     protect(traps, round_page((import_count + 1) * 32), 5);
     protect(image, round_page(size), 0);
@@ -997,7 +997,7 @@ int main(int argc, char **argv) {
     if (!cpu_only) runtime_game_set_image(image); /* settings.ini frame_rate, applied at each flip */
     printf("Entering original x86-64 code at guest offset 0x%" PRIx64 "\n", entry);
     entered_game=1;
-    /* -nosplash is Resogun's switch. Tempest 4000's eboot carries no such string, and handing
+    /* -nosplash is Tempest's switch. Tempest 4000's eboot carries no such string, and handing
      * it an argument it does not know leaves it waiting in its intro video rather than
      * starting, so this fork passes none. */
     struct { uint64_t argc; const char *argv[GUEST_ARGS+2]; } params = {(uint64_t)guest_argc, {NULL}};

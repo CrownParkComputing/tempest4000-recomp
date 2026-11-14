@@ -228,7 +228,7 @@ private:
 
     std::optional<Frame> m_current_video_frame;
     std::optional<Frame> m_current_audio_frame;
-    // resogun: buffers of frames the game moved past, reused only after RetiredVideoFrames
+    // tempest: buffers of frames the game moved past, reused only after RetiredVideoFrames
     // more frames: the GPU draws a frame a few frames after the game asked for it.
     static constexpr u32 RetiredVideoFrames = 3;
     std::deque<GuestBuffer> m_retired_video_buffers;

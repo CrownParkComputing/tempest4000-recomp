@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-or-later
-"""Builds res/resogun.ico, the icon of the game and setup exes (and so of the
+"""Builds res/tempest.ico, the icon of the game and setup exes (and so of the
 desktop shortcut), from square app artwork in any format Pillow reads (PNG, WebP, ...).
 
-    python tools/make_app_icon.py ARTWORK [--full] [--out res/resogun.ico] [--preview PNG]
+    python tools/make_app_icon.py ARTWORK [--full] [--out res/tempest.ico] [--preview PNG]
 
 The artwork is an icon tile (rounded or not) on a plain background: the background that touches the
 image's corners becomes transparent, and the tile is cropped and centered on a square. Artwork that is
@@ -43,7 +43,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('artwork', type=Path)
     p.add_argument('--full', action='store_true', help='keep the whole image: no background cut')
-    p.add_argument('--out', type=Path, default=PORT / 'res' / 'resogun.ico')
+    p.add_argument('--out', type=Path, default=PORT / 'res' / 'tempest.ico')
     p.add_argument('--preview', type=Path, help='also write the 256 px icon on a dark background, to check the edge')
     a = p.parse_args()
     artwork = Image.open(a.artwork)
