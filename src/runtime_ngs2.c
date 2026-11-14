@@ -41,10 +41,27 @@ typedef struct { uint16_t size; int16_t next; uint32_t id; } VoiceParamHeader;
 /* The format of a voice's sample data, and one block of it. Both follow shadPS4's ngs2.h. */
 typedef struct { uint32_t type, channels, sample_rate, config, frame_offset, frame_margin; } WaveformFormat;
 typedef struct { uint32_t data_offset, data_size, repeats, skip_samples, samples, reserved; uintptr_t user_data; } WaveformBlock;
-/* Sampler voice parameters (ngs2_sampler.h): setting a voice up names its format, and the
- * waveform-blocks parameter hands it the sample data itself. */
-#define PARAM_SAMPLER_SETUP 0x40010000u
-#define PARAM_SAMPLER_WAVEFORM_BLOCKS 0x40010001u
+/* A voice parameter's id is (rack id << 16) | index, so the same parameter has a different id
+ * on each kind of rack. The constants below follow AnyPS5's libSceNgs2.native (GPL-2.0),
+ * whose NGS2 is a working native implementation.
+ * This game builds a custom sampler rack (0x4001), a custom submixer (0x4002), a submixer
+ * (0x2000) and a mastering rack (0x3000). */
+#define RACK_SAMPLER 0x1000u
+#define RACK_CUSTOM_SAMPLER 0x4001u
+#define PARAM_INDEX_SETUP 0x0000u
+#define PARAM_INDEX_ADD_WAVEFORM_BLOCKS 0x0001u
+#define PARAM_VOICE_EVENT 0x0006u
+/* Voice events, and the state flags a voice reports back. */
+#define EVENT_PLAY 1u
+#define EVENT_STOP 2u
+#define EVENT_STOP_IMMEDIATE 4u
+#define EVENT_KILL 8u
+#define EVENT_PAUSE 16u
+#define EVENT_RESUME 32u
+static int is_sampler_param(uint32_t id, uint32_t index) {
+    uint32_t rack = id >> 16;
+    return (id & 0xffffu) == index && (rack == RACK_SAMPLER || rack == RACK_CUSTOM_SAMPLER);
+}
 /* Waveform types: the PCM family the render buffers use, and 0x40, which the game asks about
  * for its music. */
 #define WAVEFORM_PCM_I16_LE 0x12u
@@ -56,6 +73,12 @@ typedef struct { uint32_t data_offset, data_size, repeats, skip_samples, samples
  * use. Reporting nothing told the caller the voice was never allocated. */
 #define VOICE_STATE_IN_USE 1u
 #define VOICE_STATE_PLAYING 2u
+#define VOICE_STATE_PAUSED 4u
+#define VOICE_STATE_STOPPED 8u
+#define VOICE_STATE_EMPTY 0x20u
+/* Internal selectors for the two sampler parameters, which have no single id of their own. */
+#define PARAM_SAMPLER_SETUP 0xf0000000u
+#define PARAM_SAMPLER_WAVEFORM_BLOCKS 0xf0000001u
 #define ERR_INVALID_WAVEFORM_TYPE ((int32_t)0x804A0402)
 
 enum { SYSTEM_MAGIC=0x4e475332, RACK_MAGIC=0x4e475233, VOICE_MAGIC=0x4e475234 };
@@ -183,9 +206,12 @@ static ABI int32_t system_render(void *handle, const RenderBufferInfo *buffers, 
         for (Rack *r = s->racks; r; r = r->next)
             for (uint32_t n = 0; n < r->voice_count; ++n) {
                 Voice *v = &r->voices[n];
-                if (!(v->state & VOICE_STATE_PLAYING)) continue;
+                if (!(v->state & VOICE_STATE_PLAYING) || (v->state & VOICE_STATE_PAUSED)) continue;
                 uint32_t produced = voice_samples(v, scratch, grain);
-                if (!produced) { v->state &= ~VOICE_STATE_PLAYING; continue; }
+                if (!produced) {
+                    v->state = (v->state & ~VOICE_STATE_PLAYING) | VOICE_STATE_EMPTY;
+                    continue;
+                }
                 mix_into(scratch, v->decode_channels, produced, buffers[i].buffer,
                          buffers[i].waveform_type, channels);
                 mixed_voices++;
@@ -260,7 +286,21 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
     for (unsigned guard = 0; at && guard < 64; ++guard) {
         const VoiceParamHeader *h = (const VoiceParamHeader *)at;
         if (!h->size) break;
-        switch (h->id) {
+        if (h->id == PARAM_VOICE_EVENT && h->size >= sizeof(*h) + 4) {
+            uint32_t event;
+            memcpy(&event, at + sizeof(*h), 4);
+            TRACE("  event voice=%p 0x%x%s\n", handle, event,
+                  event == EVENT_PLAY ? " (play)" : event == EVENT_STOP ? " (stop)" :
+                  event == EVENT_PAUSE ? " (pause)" : event == EVENT_RESUME ? " (resume)" : "");
+            if (event & EVENT_PLAY) { v->state |= VOICE_STATE_PLAYING; v->state &= ~VOICE_STATE_PAUSED; }
+            if (event & (EVENT_STOP | EVENT_STOP_IMMEDIATE | EVENT_KILL))
+                v->state = (v->state & ~(VOICE_STATE_PLAYING | VOICE_STATE_PAUSED)) | VOICE_STATE_STOPPED;
+            if (event & EVENT_PAUSE) v->state |= VOICE_STATE_PAUSED;
+            if (event & EVENT_RESUME) v->state &= ~VOICE_STATE_PAUSED;
+        }
+        switch (is_sampler_param(h->id, PARAM_INDEX_SETUP) ? PARAM_SAMPLER_SETUP :
+                is_sampler_param(h->id, PARAM_INDEX_ADD_WAVEFORM_BLOCKS) ? PARAM_SAMPLER_WAVEFORM_BLOCKS :
+                h->id) {
         case PARAM_SAMPLER_SETUP: {
             const WaveformFormat *f = (const WaveformFormat *)(at + sizeof(*h));
             v->format = *f;
