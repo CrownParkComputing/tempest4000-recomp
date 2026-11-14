@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "libatrac9.h"
 
 #define ERR_INVALID_OUT_ADDRESS ((int32_t)0x804A0053)
 #define ERR_INVALID_OUT_SIZE ((int32_t)0x804A0054)
@@ -48,6 +49,8 @@ typedef struct { uint32_t data_offset, data_size, repeats, skip_samples, samples
 #define WAVEFORM_PCM_I16_BE 0x13u
 #define WAVEFORM_PCM_F32_LE 0x18u
 #define WAVEFORM_PCM_F32_BE 0x19u
+#define WAVEFORM_ATRAC9 0x40u
+#define ERR_INVALID_WAVEFORM_TYPE ((int32_t)0x804A0402)
 
 enum { SYSTEM_MAGIC=0x4e475332, RACK_MAGIC=0x4e475233, VOICE_MAGIC=0x4e475234 };
 
@@ -69,10 +72,10 @@ static size_t systems, racks, voices_handed, renders, silent_bytes;
  * only its source line, so the call that upset it has to be found from this side. */
 static int tracing(void) {
     static int on=-1;
-    if (on<0) { const char *v=getenv("RESOGUN_NGS2_TRACE"); on = v && *v && *v!='0'; }
+    if (on<0) { const char *v=getenv("RESOGUN_NGS2_TRACE"); on = v ? atoi(v) : 0; }
     return on;
 }
-#define TRACE(...) do { if (tracing()) { printf("NGS2: " __VA_ARGS__); fflush(stdout); } } while (0)
+#define TRACE(...) do { if (tracing()) fprintf(stderr,"NGS2: " __VA_ARGS__); } while (0)
 
 /* sceNgs2SystemCreateWithAllocator(option, allocator, outHandle): the option names the grain size
  * and voice limits, none of which a silent renderer needs. */
@@ -193,6 +196,15 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
         }
         default: break;
         }
+        /* Until every parameter's shape is known, the raw bytes of the ones that matter are
+         * the only reliable source: RESOGUN_NGS2_TRACE=2 dumps them. */
+        if (tracing() > 1) {
+            unsigned shown = h->size > 192 ? 192 : h->size;
+            fprintf(stderr,"NGS2:   raw id=0x%08x size=%u next=%d:", h->id, h->size, h->next);
+            for (unsigned b = 0; b < shown; ++b) fprintf(stderr," %02x", at[b]);
+            if (shown < h->size) fprintf(stderr," ... (%u more)", h->size - shown);
+            fprintf(stderr,"\n");
+        }
         if (!h->next) break;
         at += h->next;
     }
@@ -215,22 +227,58 @@ static ABI int32_t voice_get_state_flags(void *handle, uint32_t *out) {
     *out = v->state;
     return 0;
 }
+/* The ATRAC9 geometry of a configuration word, from the decoder itself rather than guessed:
+ * one superframe is `superframeSize` bytes and holds `framesInSuperframe` frames of
+ * `frameSamples` samples. Returns 0 on success. */
+static int atrac9_geometry(uint32_t config, Atrac9CodecInfo *out) {
+    void *handle = Atrac9GetHandle();
+    if (!handle) return -1;
+    /* The configuration word is held as a 32-bit value whose top byte is ATRAC9's 0xfe marker,
+     * so the decoder's byte array is that value most significant byte first. */
+    unsigned char bytes[ATRAC9_CONFIG_DATA_SIZE] = {
+        (unsigned char)(config >> 24), (unsigned char)(config >> 16),
+        (unsigned char)(config >> 8), (unsigned char)config,
+    };
+    int failed = Atrac9InitDecoder(handle, bytes) || Atrac9GetCodecInfo(handle, out);
+    Atrac9ReleaseHandle(handle);
+    return failed ? -1 : 0;
+}
+
 /* sceNgs2GetWaveformFrameInfo(format, outFrameSize, outFrameSamples, outUnitsPerFrame,
- * outDelaySamples): how one frame of a waveform format is laid out. The game asks before it
- * sizes its own buffers, so the answer has to be consistent: linear PCM, one sample a unit. */
+ * outDelaySamples): how one frame of a waveform format is laid out. The game sizes its own
+ * buffers from this, so a guess here makes it ask Scream for something impossible.
+ * ATRAC9 (type 0x40) is answered by the decoder; the PCM types are a sample a frame. */
 static ABI int32_t waveform_frame_info(const void *format, uint32_t *frame_size,
                                        uint32_t *frame_samples, uint32_t *units_per_frame,
                                        uint32_t *delay_samples) {
     if (!format) return ERR_INVALID_BUFFER_ADDRESS;
-    /* OrbisNgs2WaveformFormat: waveformType, numChannels, sampleRate, configData, frameOffset, ... */
-    uint32_t channels = ((const uint32_t *)format)[1];
-    if (!channels) channels = 1;
-    if (frame_size) *frame_size = 4 * channels;   /* 32-bit samples, one frame a sample */
-    if (frame_samples) *frame_samples = 1;
-    if (units_per_frame) *units_per_frame = 1;
-    if (delay_samples) *delay_samples = 0;
-    TRACE("GetWaveformFrameInfo(type=%u, channels=%u, rate=%u) -> frame=%u\n",
-          ((const uint32_t *)format)[0], channels, ((const uint32_t *)format)[2], 4*channels);
+    const WaveformFormat *f = format;
+    uint32_t channels = f->channels ? f->channels : 1;
+    uint32_t size, samples, units, delay = 0;
+    if (f->type == WAVEFORM_ATRAC9) {
+        Atrac9CodecInfo info;
+        if (atrac9_geometry(f->config, &info)) {
+            /* Refusing here would leave the caller with no frame size at all, and the engine
+             * waits on one; the ATRAC9 default of a 256-sample frame keeps it moving. */
+            TRACE("GetWaveformFrameInfo: ATRAC9 config 0x%08x refused by the decoder; answering the default\n",
+                  f->config);
+            size = 0; samples = 256; units = 1; delay = 0;
+        } else {
+            size = (uint32_t)info.superframeSize;
+            samples = (uint32_t)(info.frameSamples * info.framesInSuperframe);
+            units = (uint32_t)info.framesInSuperframe;
+            delay = (uint32_t)info.frameSamples;   /* the decoder's own priming frame */
+        }
+    } else {
+        uint32_t bytes = (f->type == WAVEFORM_PCM_I16_LE || f->type == WAVEFORM_PCM_I16_BE) ? 2 : 4;
+        size = bytes * channels; samples = 1; units = 1;
+    }
+    if (frame_size) *frame_size = size;
+    if (frame_samples) *frame_samples = samples;
+    if (units_per_frame) *units_per_frame = units;
+    if (delay_samples) *delay_samples = delay;
+    TRACE("GetWaveformFrameInfo(type=0x%x, channels=%u, rate=%u, config=0x%08x) -> size=%u samples=%u units=%u delay=%u\n",
+          f->type, channels, f->sample_rate, f->config, size, samples, units, delay);
     return 0;
 }
 

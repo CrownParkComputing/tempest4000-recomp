@@ -156,13 +156,18 @@ target_link_libraries(resogun_gpu PUBLIC PkgConfig::X11 Vulkan::Vulkan)
 # -std=c11 hides POSIX from glibc's headers (sigjmp_buf in runtime.h, among others).
 add_compile_options($<$<COMPILE_LANGUAGE:C>:-D_DEFAULT_SOURCE>)
 file(GLOB RESOGUN_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
+# LibAtrac9 (third_party/libatrac9, MIT): the ATRAC9 decoder NGS2's sampler voices need, which
+# is how this game's music and effects are stored. Third-party C, built without this tree's
+# -Werror and its C11 strictness.
+file(GLOB RESOGUN_ATRAC9 CONFIGURE_DEPENDS ../third_party/libatrac9/*.c)
+set_source_files_properties(${RESOGUN_ATRAC9} PROPERTIES COMPILE_OPTIONS "-w" C_STANDARD 99)
 # isa_emulate runs inside guest code: no XMM/YMM.
 set_source_files_properties(../src/isa_emulate.c PROPERTIES COMPILE_OPTIONS "-mgeneral-regs-only")
-add_executable(resogun ../src/loader.c ${RESOGUN_RUNTIME} ../src/cpu_check.c
+add_executable(resogun ../src/loader.c ${RESOGUN_RUNTIME} ${RESOGUN_ATRAC9} ../src/cpu_check.c
     ../src/vulkan_smoke.c ../src/isa_rewrite.c ../src/isa_emulate.c ../src/launcher.c)
 set_target_properties(resogun PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
 target_compile_options(resogun PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
-target_include_directories(resogun PRIVATE .. ../src)
+target_include_directories(resogun PRIVATE .. ../src ../third_party/libatrac9)
 target_link_libraries(resogun PRIVATE resogun_gpu -pthread)
 # Not PIE: host heap objects handed to the guest stay in the brk heap, below 1 TiB (loader.c main).
 set_target_properties(resogun PROPERTIES POSITION_INDEPENDENT_CODE OFF)
