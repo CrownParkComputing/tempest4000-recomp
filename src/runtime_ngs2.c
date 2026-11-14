@@ -100,6 +100,10 @@ typedef struct {
     float pcm[ATRAC9_MAX_SUPERFRAME * 2];
     uint32_t pcm_samples, pcm_taken;
     uint32_t decode_channels;
+    /* ATRAC9 geometry: a decode call yields one frame, and a superframe holds several of
+     * them followed by padding that has to be stepped over. */
+    uint32_t frame_samples, frames_in_superframe, superframe_bytes;
+    uint32_t frame_index, input_cursor;
 } Voice;
 struct Rack { uint32_t magic; void *system; struct Rack *next; uint32_t voice_count; Voice voices[]; };
 /* A system keeps its racks so rendering can walk every voice it owns. */
@@ -164,9 +168,18 @@ static uint32_t voice_samples(Voice *v, float *out, uint32_t want) {
         int used = 0;
         if (Atrac9DecodeF32(v->decoder, at, (int)(b->data_size - v->read), v->pcm, &used, 0) || used <= 0)
             break;
-        v->read += (uint32_t)used;
-        v->pcm_samples = ATRAC9_MAX_SUPERFRAME;   /* one superframe; the decoder fills what it has */
+        /* One call decodes one frame, not a whole superframe. */
+        v->pcm_samples = v->frame_samples;
         v->pcm_taken = 0;
+        v->read += (uint32_t)used;
+        v->input_cursor += (uint32_t)used;
+        /* A superframe ends with padding the decoder does not consume; step over it so the
+         * next frame starts where the encoder put it. */
+        if (v->frames_in_superframe && ++v->frame_index >= v->frames_in_superframe) {
+            if (v->superframe_bytes > v->input_cursor)
+                v->read += v->superframe_bytes - v->input_cursor;
+            v->frame_index = 0; v->input_cursor = 0;
+        }
         decoded_frames++;
     }
     return done;
@@ -178,7 +191,9 @@ static void mix_into(const float *source, uint32_t source_channels, uint32_t sam
                      void *buffer, uint32_t type, uint32_t channels) {
     for (uint32_t i = 0; i < samples; ++i)
         for (uint32_t c = 0; c < channels && c < source_channels; ++c) {
-            float value = source[(size_t)i * source_channels + c];
+            /* The decoder's full scale is 32768; the output's is 32767. */
+            float value = source[(size_t)i * source_channels + c] * (32767.0f / 32768.0f);
+            if (value > 1.0f) value = 1.0f; else if (value < -1.0f) value = -1.0f;
             size_t at = (size_t)i * channels + c;
             if (type == WAVEFORM_PCM_F32_LE || type == WAVEFORM_PCM_F32_BE) {
                 ((float *)buffer)[at] += value;
@@ -328,6 +343,10 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
                 if (v->decoder && !Atrac9InitDecoder(v->decoder, cfg) &&
                     !Atrac9GetCodecInfo(v->decoder, &info)) {
                     v->decode_channels = (uint32_t)info.channels;
+                    v->frame_samples = (uint32_t)info.frameSamples;
+                    v->frames_in_superframe = (uint32_t)info.framesInSuperframe;
+                    v->superframe_bytes = (uint32_t)info.superframeSize;
+                    v->frame_index = 0; v->input_cursor = 0;
                     v->state |= VOICE_STATE_PLAYING;
                     TRACE("    decoder ready: %d ch, %d Hz, superframe %d bytes, %d samples\n",
                           info.channels, info.samplingRate, info.superframeSize,

@@ -19,7 +19,8 @@ renamed rather than rewritten. Same licence, GPL-2.0-or-later.
 | All 52 PS4 imports it needs | **implemented** |
 | Audio | ATRAC9 through NGS2 with LibAtrac9; the decoder and mixer are written but **not yet confirmed to make sound** |
 | Intro video | stalls on some runs (AvPlayer); moving `assets/Atari_h264_30fps.mp4` aside gets past it |
-| Windows, Android | no — see below |
+| Windows | no |
+| Android | not yet; a proven route exists, see below |
 
 [PORTING.md](PORTING.md) records what was measured and what each import needed.
 
@@ -39,13 +40,24 @@ TEMPEST_DISPLAY_MODE=windowed TEMPEST_OUTPUT_RESOLUTION=1280x720 ./tempest
 `display_mode=borderless` is the default and covers the screen; use `windowed` if you want the
 desktop back while it runs.
 
-## Why there is no Android build
+## Android
 
-The PS4's own x86-64 machine code is executed directly here — `loader.c` calls the game's entry
-point as a function pointer, the thread entry is x86-64 assembly, and the CPU check reads `cpuid`.
-Nothing translates instructions, so an ARM device cannot run it; that would need a full
-x86-64-to-ARM64 dynamic recompiler on the scale of FEX-Emu or box64. The realistic route on an ARM
-Android device is to run the Linux build under FEX, not to build this for Android.
+Not yet, and not by rebuilding: the PS4's own x86-64 machine code is executed directly here, so
+an ARM device cannot run it as it stands. But it is not out of reach, because the same problem
+has already been solved for the emulator this renderer comes from.
+
+[Bachata S4](https://github.com/JICA98/Bachata-S4) runs
+[shadPS4 on ARM64 Android](https://github.com/zenithblue-oss/shadps4-arm64) and ships on Google
+Play, GPL-2.0-or-later. Its shape is: the emulator itself **cross-compiled for arm64**, the PS4's
+x86-64 guest code executed by **FEX**, Vulkan through **Turnip** and a **Vortek** passthrough
+server, and glibc supplied by a managed Debian runtime. Its `runtime/scripts/` has a build script
+for each piece.
+
+The same route would work here, and the work is real but bounded: this runner's own C would have
+to build for aarch64, and the places that execute or assume x86-64 would have to go through
+FEXCore instead -- `loader.c` calling the game's entry as a function pointer, the x86-64 assembly
+in `enter_on_stack`, the `cpuid` in `cpu_check.c`, the fs-to-gs patching and the ISA rewriter.
+That is a port of the execution model, not a build flag.
 
 ## Features
 
