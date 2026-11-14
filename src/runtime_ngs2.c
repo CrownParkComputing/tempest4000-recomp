@@ -31,6 +31,9 @@
 #define MAX_VOICES 512
 /* One ATRAC9 superframe is at most 1024 samples a channel (4 frames of 256). */
 #define ATRAC9_MAX_SUPERFRAME 1024
+/* Waveform blocks are added to a voice, not handed over in one go: a streamed sound arrives a
+ * few blocks at a time while it plays. The PS4's limit is the rack's maxWaveformBlocks. */
+#define MAX_QUEUED_BLOCKS 64
 
 typedef struct { void *host_buffer; uint64_t host_buffer_size; uintptr_t reserved[5]; uintptr_t user_data; } ContextBufferInfo;
 typedef struct { void *buffer; uint64_t buffer_size; uint32_t waveform_type; uint32_t channels; } RenderBufferInfo;
@@ -89,9 +92,9 @@ typedef struct {
     Rack *rack;
     uint32_t index;
     WaveformFormat format;     /* from PARAM_SAMPLER_SETUP */
-    const unsigned char *data; /* from PARAM_SAMPLER_WAVEFORM_BLOCKS */
-    uint32_t block_count;
-    const WaveformBlock *blocks;
+    /* The queue of blocks still to play, each already resolved to its own bytes. */
+    struct { const unsigned char *data; uint32_t size, skip, samples; } queue[MAX_QUEUED_BLOCKS];
+    uint32_t queued, playing;  /* how many are waiting, and where the head is */
     /* Decoding state: one ATRAC9 superframe is decoded at a time and handed out a grain at a
      * time, because a grain is shorter than a superframe. */
     void *decoder;
@@ -146,10 +149,35 @@ static ABI int32_t system_destroy(void *handle, ContextBufferInfo *out) {
 }
 /* sceNgs2SystemRender(handle, buffers, count): fills each buffer with one grain of output.
  * Silence is all zeroes for every waveform type this game uses (float and signed PCM). */
+/* Starts a voice's decoder from the format its setup named. A streamed sound adds blocks while
+ * it plays, so this happens once, at setup, and never again mid-stream. */
+static void start_decoder(Voice *v) {
+    if (v->format.type != WAVEFORM_ATRAC9) return;
+    if (!v->decoder) v->decoder = Atrac9GetHandle();
+    unsigned char cfg[ATRAC9_CONFIG_DATA_SIZE] = {
+        (unsigned char)(v->format.config >> 24), (unsigned char)(v->format.config >> 16),
+        (unsigned char)(v->format.config >> 8), (unsigned char)v->format.config,
+    };
+    Atrac9CodecInfo info;
+    if (v->decoder && !Atrac9InitDecoder(v->decoder, cfg) && !Atrac9GetCodecInfo(v->decoder, &info)) {
+        v->decode_channels = (uint32_t)info.channels;
+        v->frame_samples = (uint32_t)info.frameSamples;
+        v->frames_in_superframe = (uint32_t)info.framesInSuperframe;
+        v->superframe_bytes = (uint32_t)info.superframeSize;
+        v->frame_index = 0; v->input_cursor = 0;
+        v->queued = v->playing = 0;
+        v->read = 0; v->block_started = 0; v->pcm_samples = v->pcm_taken = 0;
+        TRACE("  decoder ready: %d ch, %d Hz, superframe %d bytes, %d samples a frame\n",
+              info.channels, info.samplingRate, info.superframeSize, info.frameSamples);
+    } else {
+        TRACE("  decoder refused configuration 0x%08x\n", v->format.config);
+    }
+}
+
 /* The next `want` samples a channel of a voice, decoded as needed, into `out` interleaved by
  * the voice's own channel count. Returns how many samples a channel were produced. */
 static uint32_t voice_samples(Voice *v, float *out, uint32_t want) {
-    if (!v->decoder || !v->data || !v->blocks || v->block >= v->block_count) return 0;
+    if (!v->decoder || v->playing >= v->queued) return 0;
     uint32_t done = 0;
     while (done < want) {
         if (v->pcm_taken < v->pcm_samples) {
@@ -172,22 +200,25 @@ static uint32_t voice_samples(Voice *v, float *out, uint32_t want) {
             if (v->remaining_samples != UINT32_MAX) v->remaining_samples -= take;
             continue;
         }
-        /* Refill from the block that is playing; move on when it runs out. */
-        const WaveformBlock *b = &v->blocks[v->block];
+        /* The head of the queue is what plays; when it is spent the next one follows. */
+        if (v->playing >= v->queued) break;
+        const unsigned char *block_data = v->queue[v->playing % MAX_QUEUED_BLOCKS].data;
+        uint32_t block_size = v->queue[v->playing % MAX_QUEUED_BLOCKS].size;
         if (!v->block_started) {
-            v->skip_samples = b->skip_samples;
-            v->remaining_samples = b->samples ? b->samples : UINT32_MAX;
+            v->skip_samples = v->queue[v->playing % MAX_QUEUED_BLOCKS].skip;
+            uint32_t want_samples = v->queue[v->playing % MAX_QUEUED_BLOCKS].samples;
+            v->remaining_samples = want_samples ? want_samples : UINT32_MAX;
             v->block_started = 1;
         }
-        if (v->read >= b->data_size || !v->remaining_samples) {
-            if (++v->block >= v->block_count) break;
+        if (v->read >= block_size || !v->remaining_samples) {
+            ++v->playing;
             v->read = 0; v->block_started = 0;
             v->frame_index = 0; v->input_cursor = 0;
             continue;
         }
-        const unsigned char *at = v->data + b->data_offset + v->read;
+        const unsigned char *at = block_data + v->read;
         int used = 0;
-        if (Atrac9DecodeF32(v->decoder, at, (int)(b->data_size - v->read), v->pcm, &used, 0) || used <= 0)
+        if (Atrac9DecodeF32(v->decoder, at, (int)(block_size - v->read), v->pcm, &used, 0) || used <= 0)
             break;
         /* One call decodes one frame, not a whole superframe. */
         v->pcm_samples = v->frame_samples;
@@ -342,6 +373,7 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
             v->format = *f;
             TRACE("  setup voice=%p type=0x%x channels=%u rate=%u config=0x%x\n",
                   handle, f->type, f->channels, f->sample_rate, f->config);
+            start_decoder(v);
             break;
         }
         case PARAM_SAMPLER_WAVEFORM_BLOCKS: {
@@ -352,39 +384,17 @@ static ABI int32_t voice_control(void *handle, const void *param_list) {
             memcpy(&flags,body+8,4);
             memcpy(&count,body+12,4);
             memcpy(&blocks,body+16,sizeof(blocks));
-            v->data = data; v->block_count = count; v->blocks = blocks;
-            v->block = 0; v->read = 0; v->pcm_samples = 0; v->pcm_taken = 0;
-            v->skip_samples = 0; v->remaining_samples = 0; v->block_started = 0;
-            if (v->format.type == WAVEFORM_ATRAC9 && data && blocks && count) {
-                if (!v->decoder) v->decoder = Atrac9GetHandle();
-                unsigned char cfg[ATRAC9_CONFIG_DATA_SIZE] = {
-                    (unsigned char)(v->format.config >> 24), (unsigned char)(v->format.config >> 16),
-                    (unsigned char)(v->format.config >> 8), (unsigned char)v->format.config,
-                };
-                Atrac9CodecInfo info;
-                if (v->decoder && !Atrac9InitDecoder(v->decoder, cfg) &&
-                    !Atrac9GetCodecInfo(v->decoder, &info)) {
-                    v->decode_channels = (uint32_t)info.channels;
-                    v->frame_samples = (uint32_t)info.frameSamples;
-                    v->frames_in_superframe = (uint32_t)info.framesInSuperframe;
-                    v->superframe_bytes = (uint32_t)info.superframeSize;
-                    v->frame_index = 0; v->input_cursor = 0;
-                    v->state |= VOICE_STATE_PLAYING;
-                    TRACE("    decoder ready: %d ch, %d Hz, superframe %d bytes, %d samples\n",
-                          info.channels, info.samplingRate, info.superframeSize,
-                          info.frameSamples * info.framesInSuperframe);
-                } else {
-                    TRACE("    decoder refused this voice's configuration 0x%08x\n", v->format.config);
-                }
+            uint32_t added = 0;
+            for (uint32_t b = 0; b < count && data && blocks; ++b) {
+                if (v->queued - v->playing >= MAX_QUEUED_BLOCKS) break;   /* the rack's limit */
+                uint32_t slot = v->queued % MAX_QUEUED_BLOCKS;
+                v->queue[slot].data = (const unsigned char *)data + blocks[b].data_offset;
+                v->queue[slot].size = blocks[b].data_size;
+                v->queue[slot].skip = blocks[b].skip_samples;
+                v->queue[slot].samples = blocks[b].samples;
+                ++v->queued; ++added;
             }
-            TRACE("  waveform voice=%p data=%p flags=0x%x blocks=%u list=%p\n",
-                  handle, data, flags, count, (const void *)blocks);
-            if (tracing() && data && blocks && count && count < 64) {
-                const unsigned char *d = data;
-                TRACE("    block0 offset=%u size=%u samples=%u repeats=%u; first bytes %02x %02x %02x %02x %02x %02x %02x %02x\n",
-                      blocks[0].data_offset, blocks[0].data_size, blocks[0].samples, blocks[0].repeats,
-                      d[0],d[1],d[2],d[3],d[4],d[5],d[6],d[7]);
-            }
+            TRACE("    queued %u block(s); %u waiting\n", added, v->queued - v->playing);
             break;
         }
         default: break;
