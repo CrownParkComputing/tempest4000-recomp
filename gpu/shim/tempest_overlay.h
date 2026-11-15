@@ -57,6 +57,8 @@ bool CapturesInput();
 
 /// Any thread: the Display Settings panel (also F10). It saves settings.ini when it closes.
 void OpenDisplaySettings();
+/// L3+R3 toggles the menu; other active dialogs retain their input.
+void ToggleDisplaySettings();
 bool DisplaySettingsOpen();
 
 /// Any thread: asks "Exit Tempest?" with No focused (also F4; Back on the title screen); Yes

@@ -37,8 +37,9 @@ int tempest_gpu_choice_confirm(const char *title, const char *const *items, int 
                                  const unsigned char *png, uint64_t size, const char *caption, const char *unavailable);
 /* 1 while a dialog (save list, text entry) is shown: the game's pad input is held neutral. */
 int tempest_gpu_overlay_captures_input(void);
-/* Opens the Display Settings panel (F10, or Select held for 2 s: runtime_pad.c); 1 while it is open. */
+/* Opens the Display Settings panel (F10, L3+R3, or Select held for 2 s: runtime_pad.c); 1 while it is open. */
 void tempest_display_settings_open(void);
+void tempest_display_settings_toggle(void);
 int tempest_display_settings_is_open(void);
 /* Asks "Exit Tempest?" (No focused); Yes closes the game as closing its window does. Any thread. */
 void tempest_exit_prompt_open(void);

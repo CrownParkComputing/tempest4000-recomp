@@ -10,6 +10,10 @@ public class TempestActivity extends SDLActivity {
         super.onCreate(state);
         GraphicsDriverSettings.registerShortcut(this);
     }
+    public void showGraphicsDriverSettings() {
+        runOnUiThread(() -> startActivity(new android.content.Intent(this,
+            com.crownparkcomputing.ps4runtime.GraphicsDriverActivity.class)));
+    }
     public String getGraphicsDriverPath() {
         return GraphicsDriverSettings.selectedLibraryPath(this);
     }

@@ -248,6 +248,31 @@ static void host_read(PadData *d, SDL_Gamepad *g, uint8_t connected_count) {
     if (k) sample_keyboard(d,k);
 }
 
+/* One menu toggle per physical L3+R3 chord. Both clicks must be released
+ * before another toggle; a remaining click never leaks into gameplay. */
+typedef struct { bool latched; } MenuShortcut;
+static void menu_shortcut_sample(MenuShortcut *state, PadData *d, bool left, bool right, uint32_t bits) {
+    if (!left && !right) { state->latched=false; return; }
+    if (left && right && !state->latched) {
+        state->latched=true;
+        if (!tempest_gpu_overlay_captures_input() || tempest_display_settings_is_open()) {
+            tempest_display_settings_toggle();
+            puts("Runtime: L3+R3; internal settings toggled");
+        }
+    }
+    if (state->latched) d->buttons&=~bits;
+}
+static void gamepad_menu_shortcut(PadData *d, SDL_Gamepad *g) {
+    static MenuShortcut state;
+    const bool left=g && SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_LEFT_STICK);
+    const bool right=g && SDL_GetGamepadButton(g,SDL_GAMEPAD_BUTTON_RIGHT_STICK);
+    uint32_t bits=BTN_L3|BTN_R3;
+    for (size_t i=0;i<pad_map.count;++i)
+        if (pad_map.entries[i].source==SDL_GAMEPAD_BUTTON_LEFT_STICK ||
+            pad_map.entries[i].source==SDL_GAMEPAD_BUTTON_RIGHT_STICK) bits|=pad_map.entries[i].ps;
+    menu_shortcut_sample(&state,d,left,right,bits);
+}
+
 /* Host thread: Select (Back/View/Share) held for SELECT_HOLD_US opens the Display Settings panel.
  * What Select presses (the touchpad click) is held back while it is down and
  * played as a SELECT_TAP_US tap when it is let go sooner; after the panel opened it is dropped. */
@@ -313,6 +338,7 @@ static void *host_thread(void *arg) {
         if (sdl_ready>0) g=host_gamepad(g,start,&next_scan,&connected_count);
         PadData d;
         host_read(&d,g,connected_count);
+        gamepad_menu_shortcut(&d,g);
         select_hold(&d,g,start);
         pthread_mutex_lock(&host_lock);
         host_sample=d;

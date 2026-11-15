@@ -422,6 +422,10 @@ extern "C" void tempest_display_settings_open(void) {
     TempestOverlay::OpenDisplaySettings();
 }
 
+extern "C" void tempest_display_settings_toggle(void) {
+    TempestOverlay::ToggleDisplaySettings();
+}
+
 extern "C" int tempest_display_settings_is_open(void) {
     return TempestOverlay::DisplaySettingsOpen() ? 1 : 0;
 }

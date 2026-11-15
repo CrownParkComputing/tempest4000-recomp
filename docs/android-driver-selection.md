@@ -5,12 +5,19 @@ The driver setting is separate for each game.
 
 ## Change a driver
 
-1. Long-press the game's launcher icon and choose **Graphics driver**. Android's
-   app-info screen may also expose its app preferences.
-2. Select **Bundled** or **System Vulkan driver**, or choose **Import driver ZIP**
+1. Press **L3 + R3 together** (both stick clicks) to open the internal settings
+   menu. Press them together again, after releasing both, to close it. F10 and
+   holding Select for two seconds remain available.
+2. Choose **Graphics driver** with the D-pad and press **Cross / A**.
+3. Select **Bundled** or **System Vulkan driver**, or choose **Import driver ZIP**
    to select an ARM64 AdrenoTools driver package from the document picker.
-3. Close and reopen the game to apply the selection. Choosing a driver does not
+4. Close and reopen the game to apply the selection. Choosing a driver does not
    restart a running level or change its saves.
+
+The driver screen is also available independently: open the app once to register
+its shortcut, then long-press its launcher icon and choose **Graphics driver**.
+Android app info can expose the same app preferences. This route remains useful
+when a driver cannot start the renderer.
 
 An imported package appears as a third choice, using the name from its metadata.
 To restore the default, select **Bundled**. The settings activity works independently

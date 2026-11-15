@@ -194,3 +194,5 @@ GPL-2.0-or-later, see [LICENSE](LICENSE). Runtime follows [shadPS4](https://gith
 On Android, long-press the game icon → **Graphics driver** to select bundled Turnip (the default), the system driver, or import another driver ZIP. [Driver settings](docs/android-driver-selection.md) apply on the next launch and are separate for each game.
 
 The self-contained [Android build guide](android/README.md) prepares this checkout's SDL, headers, FFmpeg and AdrenoTools dependencies; source its generated `out/android-env.sh` before building or packaging.
+
+Press **L3 + R3 together** to toggle the internal settings menu. On Android, choose **Graphics driver** → **Import driver ZIP** to install another Turnip driver; the selection applies on the next game launch.

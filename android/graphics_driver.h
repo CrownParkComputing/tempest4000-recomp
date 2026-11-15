@@ -78,4 +78,21 @@ inline PFN_vkGetInstanceProcAddr LoadGraphicsDriver(JNIEnv* env, jobject activit
     if (!proc) throw std::runtime_error("Selected driver has no vkGetInstanceProcAddr");
     return proc;
 }
+inline bool OpenGraphicsDriverSettings() {
+    auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) return false;
+    jclass type = env->GetObjectClass(activity);
+    jmethodID method = env->GetMethodID(type, "showGraphicsDriverSettings", "()V");
+    if (!method || env->ExceptionCheck()) {
+        env->ExceptionClear(); env->DeleteLocalRef(type); env->DeleteLocalRef(activity);
+        return false;
+    }
+    env->CallVoidMethod(activity, method);
+    const bool okay = !env->ExceptionCheck();
+    if (!okay) env->ExceptionClear();
+    env->DeleteLocalRef(type); env->DeleteLocalRef(activity);
+    return okay;
+}
+
 }

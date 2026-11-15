@@ -57,3 +57,5 @@ on the next game launch, with independent per-game preferences. See
 
 Focused importer checks: `bash tools/check_android_driver_import.sh`.
 The inherited runtime/device investigation is in `docs/android.md`.
+
+The internal menu is available with **L3 + R3 together**. Its **Graphics driver** row opens the same bundled/system/import-ZIP settings. Release both sticks before toggling again.

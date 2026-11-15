@@ -58,6 +58,9 @@ void driver() {
     puts("Android: selected Vulkan driver ready");
 }
 }
+extern "C" int ps4_android_open_driver_settings(void) {
+    return Ps4Android::OpenGraphicsDriverSettings() ? 1 : 0;
+}
 extern "C" PFN_vkGetInstanceProcAddr tempest_android_vulkan_proc() { return vulkan_proc; }
 extern "C" SDL_DECLSPEC int SDL_main(int, char **) {
     int result=1;
