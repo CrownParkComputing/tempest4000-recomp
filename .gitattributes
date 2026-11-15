@@ -2,3 +2,6 @@
 # runners): bash cannot run build.sh or the tools with CRLF line endings. Binary files are detected.
 * text=auto eol=lf
 *.bat text eol=crlf
+
+# Unified-diff context lines contain meaningful leading/trailing spaces.
+*.patch -whitespace
