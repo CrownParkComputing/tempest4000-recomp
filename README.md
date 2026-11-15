@@ -192,3 +192,5 @@ Based on and inspired by [theatrhythm-fbl-pc](https://github.com/YAPhoa/theatrhy
 GPL-2.0-or-later, see [LICENSE](LICENSE). Runtime follows [shadPS4](https://github.com/shadps4-emu/shadPS4). Tempest is a game by Housemarque, published by Sony Interactive Entertainment; this project is not affiliated with or endorsed by either.
 
 On Android, long-press the game icon → **Graphics driver** to select bundled Turnip (the default), the system driver, or import another driver ZIP. [Driver settings](docs/android-driver-selection.md) apply on the next launch and are separate for each game.
+
+The self-contained [Android build guide](android/README.md) prepares this checkout's SDL, headers, FFmpeg and AdrenoTools dependencies; source its generated `out/android-env.sh` before building or packaging.
