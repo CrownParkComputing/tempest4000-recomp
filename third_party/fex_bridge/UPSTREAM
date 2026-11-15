@@ -1,0 +1,11 @@
+FEXCore embedding bridge from zenithblue-oss/shadps4-arm64
+https://github.com/zenithblue-oss/shadps4-arm64
+Revision: be6bc2e9c60799e071dd2fafa6216e8d80ec619c
+
+core/fex and core/guest_cpu (except hle_trace.h): MIT (SPDX notices retained).
+common/types.h, core/guest_cpu/hle_trace.h and
+core/libraries/kernel/threads/exception.h: GPL-2.0-or-later (see ../../LICENSE).
+Used by the Android execution probe; no game files are included.
+
+Local changes: integer returns up to 32 bits zero the upper half of guest RAX,
+as the original x86 SysV functions do.

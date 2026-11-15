@@ -7,6 +7,7 @@
  * the same 9-byte instruction with another displacement. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "guest_call.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +28,9 @@
 #include <sys/syscall.h>
 #include <linux/futex.h>
 #include <sys/mman.h>
+#if defined(__x86_64__)
 #include <asm/prctl.h>
+#endif
 #endif
 #define ERR(n) ((int32_t)(UINT32_C(0x80020000)|(n)))
 #define ATTR_MAGIC UINT32_C(0x41545452)
@@ -122,6 +125,9 @@ static void set_gs(void *base) {
     runtime_thread_tcb_offset();
     if (!TlsSetValue(tls_slot,base)) { fprintf(stderr,"STOP: TlsSetValue failed (%lu)\n",GetLastError()); exit(21); }
 }
+#elif defined(TEMPEST_FEX)
+/* The guest segment base belongs to FEX's x86 state, not the host's ARM64 TLS register. */
+static void set_gs(void *base) { (void)base; }
 #else
 static void set_gs(void *base) {
     if (syscall(SYS_arch_prctl,ARCH_SET_GS,(unsigned long)base)) { perror("STOP: arch_prctl(ARCH_SET_GS)"); exit(21); }
@@ -183,6 +189,9 @@ GuestThread *runtime_thread_current(void) {
     attach(t); publish(t);
     return t;
 }
+#ifdef TEMPEST_FEX
+uintptr_t runtime_thread_tcb(void) { return (uintptr_t)runtime_thread_current()->tcb; }
+#endif
 /* Host threads that call guest code (HLE decoders invoking guest callbacks) need
  * a TCB/TLS like guest threads; the record lives until process exit. */
 void runtime_thread_attach_host(const char *name) {
@@ -375,7 +384,7 @@ static void *host_start(void *p) {
     attach(t);
     set_host_name(t->name);
     set_host_priority(t->name,t->attr.prio);
-    if (!exit_setjmp(t)) t->result=t->entry(t->argument);
+    if (!exit_setjmp(t)) t->result=(void *)GUEST_CALL1(GuestEntry,t->entry,t->argument);
     runtime_thread_keys_cleanup();
     pthread_mutex_lock(&lock); t->finished=1; ++exited;
 #ifdef _WIN32

@@ -6,6 +6,10 @@
 #if __unix__
 #include <pthread.h>
 #endif
+#ifndef PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP
+// tempest: Android's pthreads do not expose glibc's adaptive-mutex initializer.
+#include "common/spin_lock.h"
+#endif
 
 namespace Common {
 

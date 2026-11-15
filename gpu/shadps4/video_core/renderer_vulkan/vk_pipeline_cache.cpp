@@ -15,6 +15,7 @@
 #include "tempest_toggles.h"
 
 #include "common/hash.h"
+#include "common/arch.h"
 #include "common/thread.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
@@ -222,6 +223,13 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(PipelineSelection& se
         info.hw.fs.en_flags = regs.ps_input_ena;
         info.hw.fs.addr_flags = regs.ps_input_addr;
         info.hw.fs.num_inputs = regs.num_interp;
+        info.hw.fs.point_primitive =
+            regs.stage_enable.IsStageEnabled(static_cast<u32>(HwStage::Geometry))
+                ? regs.vgt_gs_out_prim_type.GetPrimitiveType(0) ==
+                      AmdGpu::GsOutputPrimitiveType::PointList
+                : regs.stage_enable.hs_en
+                      ? regs.tess_config.topology == AmdGpu::TessellationTopology::Point
+                      : regs.primitive_type == AmdGpu::PrimitiveType::PointList;
         info.hw.fs.front_face_all_bits = regs.barycentric_control.front_face_all_bits;
         info.hw.fs.num_samples =
             regs.ps_input_addr.sample_coverage_ena && regs.ps_input_ena.sample_coverage_ena
@@ -332,6 +340,14 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supported_spirv = SpirvVersion1_6,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
+#if defined(ARCH_X86_64)
+        .srt_walker_arch = 0x8664,
+#elif defined(ARCH_ARM64)
+        .srt_walker_arch = 0xaa64,
+#else
+#error Unsupported SRT walker architecture
+#endif
+        .no_msaa = AmdGpu::NoMsaa(),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),

@@ -17,10 +17,10 @@ renamed rather than rewritten. Same licence, GPL-2.0-or-later.
 |---|---|
 | Boots, renders, plays | **yes** — title screen, level select, the tube, its own geometry |
 | All 52 PS4 imports it needs | **implemented** |
-| Audio | ATRAC9 through NGS2 with LibAtrac9; the decoder and mixer are written but **not yet confirmed to make sound** |
+| Audio | ATRAC9 music and PCM effects through NGS2; routing, pitch, timing and voice-reuse checks pass |
 | Intro video | stalls on some runs (AvPlayer); moving `assets/Atari_h264_30fps.mp4` aside gets past it |
 | Windows | no |
-| Android | not yet; a proven route exists, see below |
+| Android | experimental ARM64 APK, tested on Retroid Pocket Flip2 |
 
 [PORTING.md](PORTING.md) records what was measured and what each import needed.
 
@@ -42,22 +42,23 @@ desktop back while it runs.
 
 ## Android
 
-Not yet, and not by rebuilding: the PS4's own x86-64 machine code is executed directly here, so
-an ARM device cannot run it as it stands. But it is not out of reach, because the same problem
-has already been solved for the emulator this renderer comes from.
+An experimental ARM64 port is being tested on a **Retroid Pocket Flip2 (Snapdragon 865,
+Android 13)**. FEXCore runs the original x86-64 instructions; the PS4 library implementations
+compile directly with the Android NDK. This uses the embedding bridge from
+[Bachata/shadPS4 ARM64](https://github.com/zenithblue-oss/shadps4-arm64), with pinned revisions
+recorded in [third_party/fex_bridge/UPSTREAM](third_party/fex_bridge/UPSTREAM).
 
-[Bachata S4](https://github.com/JICA98/Bachata-S4) runs
-[shadPS4 on ARM64 Android](https://github.com/zenithblue-oss/shadps4-arm64) and ships on Google
-Play, GPL-2.0-or-later. Its shape is: the emulator itself **cross-compiled for arm64**, the PS4's
-x86-64 guest code executed by **FEX**, Vulkan through **Turnip** and a **Vortek** passthrough
-server, and glibc supplied by a managed Debian runtime. Its `runtime/scripts/` has a build script
-for each piece.
+On-device checks pass for the NGS2 mixer, real title-music decoding, typed guest-to-host calls,
+concurrent guest execution, GS-based TLS and unaligned loads. The real PS4 libc and Fios2
+initializers also run. The stock Adreno 650
+driver exposes Vulkan 1.1; a rootless Turnip build was verified to expose Vulkan 1.3.352 and
+present through an Android surface.
 
-The same route would work here, and the work is real but bounded: this runner's own C would have
-to build for aarch64, and the places that execute or assume x86-64 would have to go through
-FEXCore instead -- `loader.c` calling the game's entry as a function pointer, the x86-64 assembly
-in `enter_on_stack`, the `cpuid` in `cpu_check.c`, the fs-to-gs patching and the ISA rewriter.
-That is a port of the execution model, not a build flag.
+The development APK renders the title and gameplay with music and PCM sound effects through
+Turnip. Single-sampled rendering avoids the overlapping image on Adreno 650. Saved shader
+pipelines are disabled on Android while their restoration is investigated. No game files are
+packaged in either APK.
+Build/check commands and the remaining work are in [docs/android.md](docs/android.md).
 
 ## Features
 
@@ -189,3 +190,5 @@ I (human) am a programmer, but I know nothing about C++ which is required to mak
 Based on and inspired by [theatrhythm-fbl-pc](https://github.com/YAPhoa/theatrhythm-fbl-pc).
 
 GPL-2.0-or-later, see [LICENSE](LICENSE). Runtime follows [shadPS4](https://github.com/shadps4-emu/shadPS4). Tempest is a game by Housemarque, published by Sony Interactive Entertainment; this project is not affiliated with or endorsed by either.
+
+On Android, long-press the game icon → **Graphics driver** to select bundled Turnip (the default), the system driver, or import another driver ZIP. [Driver settings](docs/android-driver-selection.md) apply on the next launch and are separate for each game.

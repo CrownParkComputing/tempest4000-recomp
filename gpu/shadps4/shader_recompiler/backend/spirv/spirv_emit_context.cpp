@@ -351,6 +351,9 @@ void EmitContext::DefineInputs() {
         break;
     }
     case SwStage::Fragment: {
+        if (runtime_info.hw.fs.point_primitive) {
+            point_coord = DefineVariable(F32[2], spv::BuiltIn::PointCoord, spv::StorageClass::Input);
+        }
         if (info.loads.GetAny(IR::Attribute::FragCoord) ||
             (info.loads.GetAny(IR::Attribute::BaryCoordPullModel) &&
              !profile.supports_amd_shader_explicit_vertex_parameter)) {

@@ -53,7 +53,7 @@ void Translator::EmitVectorInterpolation(const GcnInst& inst) {
 // VINTRP
 
 void Translator::V_INTERP_P1_F32(const GcnInst& inst) {
-    if (!profile.needs_manual_interpolation) {
+    if (!profile.needs_manual_interpolation || runtime_info.hw.fs.point_primitive) {
         return;
     }
     const u32 attr_index = inst.control.vintrp.attr;
@@ -80,7 +80,7 @@ void Translator::V_INTERP_P2_F32(const GcnInst& inst) {
                ir.Imm32(DefaultValTable[attr.default_value][inst.control.vintrp.chan]));
         return;
     }
-    if (attr.is_flat) {
+    if (attr.is_flat || runtime_info.hw.fs.point_primitive) {
         // tempest: a flat-shaded input (SPI_PS_INPUT_CNTL.FLAT_SHADE) holds P0 with zero deltas
         // in the parameter cache, so P1/P2 interpolation gives the provoking vertex's value on
         // hardware. An assertion here stopped a player's game in Mission 3's intro (issue #1).
@@ -109,6 +109,14 @@ void Translator::V_INTERP_MOV_F32(const GcnInst& inst) {
     auto& interp = info.fs_interpolation[attr_index];
     const u32 src_select = inst.src[0].code;
     ASSERT_MSG(src_select < 3, "Invalid V_INTERP_MOV_F32 selector {}", src_select);
+    if (runtime_info.hw.fs.point_primitive) {
+        // A point has only P0; its parameter-cache deltas are zero.
+        interp.primary = Qualifier::Flat;
+        SetDst(inst.dst[0], src_select == 2 || attr.IsPassthrough()
+                                ? ir.GetAttribute(attrib, inst.control.vintrp.chan)
+                                : ir.Imm32(0.0f));
+        return;
+    }
     ASSERT(attr.is_flat || src_select == 2 ||
            profile.supports_amd_shader_explicit_vertex_parameter ||
            profile.supports_fragment_shader_barycentric);

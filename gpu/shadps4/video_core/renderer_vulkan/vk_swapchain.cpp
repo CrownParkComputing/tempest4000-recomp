@@ -44,7 +44,8 @@ void Swapchain::Create(u32 width_, u32 height_) {
 
     Destroy();
 
-    if (width == 0 || height == 0 || !SetSurfaceProperties()) {
+    if (!surface || surface_lost) RecreateSurface();
+    if (!surface || width == 0 || height == 0 || !SetSurfaceProperties()) {
         needs_recreation = true;
         return;
     }
@@ -141,8 +142,11 @@ bool Swapchain::AcquireNextImage() {
     switch (result) {
     case vk::Result::eSuccess:
         break;
-    case vk::Result::eSuboptimalKHR:
     case vk::Result::eErrorSurfaceLostKHR:
+        surface_lost = true;
+        needs_recreation = true;
+        break;
+    case vk::Result::eSuboptimalKHR:
     case vk::Result::eErrorOutOfDateKHR:
     case vk::Result::eErrorUnknown:
         needs_recreation = true;
@@ -152,6 +156,13 @@ bool Swapchain::AcquireNextImage() {
                      vk::to_string(result));
         UNREACHABLE();
         break;
+    }
+
+    if (std::getenv("TEMPEST_SURFACE_TRACE") && result != vk::Result::eSuccess) {
+        static u32 reports{};
+        if (reports++ < 16)
+            std::printf("Swapchain acquire: %s recreate=%d surface_lost=%d\n",
+                vk::to_string(result).c_str(), int(needs_recreation), int(surface_lost));
     }
 
     return !needs_recreation;
@@ -172,6 +183,7 @@ bool Swapchain::Present() {
     };
 
     auto result = instance.GetPresentQueue().presentKHR(present_info);
+    if (result == vk::Result::eErrorSurfaceLostKHR) surface_lost = true;
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR ||
         result == vk::Result::eErrorSurfaceLostKHR) {
         needs_recreation = true;
@@ -285,6 +297,11 @@ void Swapchain::RecreateSurface() {
         surface = nullptr;
     }
     surface = CreateSurface(instance.GetInstance(), window);
+    if (!surface) {
+        needs_recreation = true;
+        return;
+    }
+    surface_lost = false;
     const auto prev_format = surface_format.format;
     FindPresentFormat();
     FindPresentMode();
@@ -300,6 +317,7 @@ bool Swapchain::SetSurfaceProperties() {
     if (capabilities_result == vk::Result::eErrorSurfaceLostKHR) {
         LOG_WARNING(Render_Vulkan, "Surface lost while querying capabilities; recreating surface...");
         RecreateSurface();
+        if (!surface) return false;
         std::tie(capabilities_result, capabilities) =
             instance.GetPhysicalDevice().getSurfaceCapabilitiesKHR(surface);
     }

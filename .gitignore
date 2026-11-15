@@ -10,3 +10,9 @@ user/
 /*.spv
 dist/
 dist-*/
+
+# Locally supplied Android driver archives and signing material.
+/*.zip
+*.apk
+*.keystore
+*.jks

@@ -6,10 +6,13 @@
 // lighting shows black lines. Intel's Windows driver: the same lines on Arc A750, B580
 // and 140V. NVIDIA, RADV, AMDVLK, Mesa ANV and MoltenVK read it correctly as far as
 // known and keep the game's multisampling.
+// Mesa Turnip on Adreno 650 repeats and enlarges the title with the game's mixed sample
+// counts. Single-sampled images render correctly and avoid the mobile MSAA conversion path.
 #pragma once
 
 #include <vulkan/vulkan_core.h>
 
 static inline int tempest_no_msaa_default(VkDriverId driver) {
-    return driver == VK_DRIVER_ID_AMD_PROPRIETARY || driver == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS;
+    return driver == VK_DRIVER_ID_AMD_PROPRIETARY ||
+           driver == VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS || driver == VK_DRIVER_ID_MESA_TURNIP;
 }

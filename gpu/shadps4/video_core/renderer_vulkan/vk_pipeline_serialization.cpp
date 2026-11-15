@@ -40,7 +40,7 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 7u; // tempest: interpolated integer fix (Pascal)
+static constexpr u32 ShaderBinaryVersion = 9u; // tempest: point coordinates without barycentric extensions
 static constexpr u32 ShaderMetaVersion = 7u; // tempest: ImageResource::needs_native
 static constexpr u32 PipelineKeyVersion = 5u; // tempest: Info layout (ImageResource::needs_native)
 } // namespace Serialization
@@ -786,8 +786,9 @@ bool LoadShaderMeta(Serialization::Archive& ar, Shader::Info& info,
     meta.Read(perm_hash_ar);
     meta.Read(perm_idx);
 
-    spec.Deserialize(ar);
-    info.Deserialize(ar);
+    if (!spec.Deserialize(ar) || !info.Deserialize(ar)) {
+        return false;
+    }
 
     fetch_shader_data = spec.fetch_shader_data;
     return true;
@@ -1837,9 +1838,14 @@ bool PersistentSrtInfo::Deserialize(Serialization::Archive& ar) {
 
     srt.Read(this, sizeof(*this));
 
+    // A serialized host address is never callable in the new process, including empty walkers.
+    walker_func = nullptr;
+
     if (walker_func_size) {
         walker_func = RegisterWalkerCode(ar.CurrPtr(), walker_func_size);
         ar.Advance(walker_func_size);
+        // tempest: a cache can contain code from a different CPU architecture.
+        if (!walker_func) return false;
     }
 
     return true;

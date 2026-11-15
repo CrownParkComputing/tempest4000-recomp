@@ -1,0 +1,10 @@
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/black" />
+    <!-- Adaptive layers extend 25% beyond the visible icon on every edge. Keep
+         the supplied square artwork exactly within the visible launcher area. -->
+    <foreground>
+        <inset android:inset="16.666667%">
+            <bitmap android:src="@drawable/tempest_game_icon" android:gravity="fill" android:filter="true" />
+        </inset>
+    </foreground>
+</adaptive-icon>

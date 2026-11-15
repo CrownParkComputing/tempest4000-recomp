@@ -1,0 +1,2 @@
+Built-in image_gen edit of the supplied Tempest 4000 launcher art.
+Remove Atari and Llamasoft branding, including ATARI PRESENTS and both publisher logos. Enlarge and center the exact two-line TEMPEST / 4000 title. Preserve angular cyan/red neon lettering, black backdrop, purple wireframe tunnel and light streaks. Full-bleed square launcher artwork; no border or white padding.

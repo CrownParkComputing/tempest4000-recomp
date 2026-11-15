@@ -88,6 +88,7 @@ int main() {
     // off where the 2-sample depth fetch is wrong (RX 6600, Arc), on elsewhere.
     assert(tempest_no_msaa_default(VK_DRIVER_ID_AMD_PROPRIETARY));
     assert(tempest_no_msaa_default(VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS));
+    assert(tempest_no_msaa_default(VK_DRIVER_ID_MESA_TURNIP));
     for (const VkDriverId keeps_msaa :
          {VK_DRIVER_ID_NVIDIA_PROPRIETARY, VK_DRIVER_ID_MESA_RADV, VK_DRIVER_ID_AMD_OPEN_SOURCE,
           VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA, VK_DRIVER_ID_MOLTENVK, VK_DRIVER_ID_MESA_LLVMPIPE,

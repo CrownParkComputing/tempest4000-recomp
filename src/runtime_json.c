@@ -11,6 +11,7 @@
  * Arrays and objects live in low memory, owned by their Value. The game's MemAllocator is not
  * used: everything comes from runtime_low_alloc. */
 #include "runtime.h"
+#include "guest_call.h"
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -76,7 +77,7 @@ static void release(Value *v) {
 /* What a read of `type` from `v` gives when `v` holds no such thing: the callback's Value. */
 static const Value *missing(const Value *v, int32_t type) {
     if (v && v->null_access) {
-        const Value *r=v->null_access(type,v,v->context);
+        const Value *r=(const Value *)GUEST_CALL3(NullCallback,v->null_access,type,v,v->context);
         if (r) return r;
     }
     return &null_value;

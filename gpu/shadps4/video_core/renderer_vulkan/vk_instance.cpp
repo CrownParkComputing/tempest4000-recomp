@@ -191,7 +191,7 @@ Instance::Instance(const Frontend::WindowSystemInfo& window_info, s32 physical_d
                VK_VERSION_MAJOR(TargetVulkanApiVersion), VK_VERSION_MINOR(TargetVulkanApiVersion),
                VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion));
 
-    CreateDevice();
+    ASSERT_MSG(CreateDevice(), "Failed to initialize Vulkan device");
     CollectPhysicalMemoryInfo();
     CollectImageFormatInfo();
     CollectToolingInfo();
@@ -464,16 +464,23 @@ bool Instance::CreateDevice() {
     }
 
     u32 sparse_queue_family_index = queue_family_index;
-    if (!(family_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eSparseBinding)) {
+    std::printf("GPU: sparse binding=%u, sparse buffer residency=%u\n",
+                features.sparseBinding, features.sparseResidencyBuffer);
+    const char* dense = std::getenv("TEMPEST_DENSE_BUFFERS");
+    sparse_buffers = features.sparseBinding && features.sparseResidencyBuffer &&
+                     !(dense && dense[0] == '1');
+    if (sparse_buffers && !(family_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eSparseBinding)) {
         const auto sparse_family = std::find_if(
             family_properties.begin(), family_properties.end(), [](const auto& family) {
                 return family.queueCount && (family.queueFlags & vk::QueueFlagBits::eSparseBinding);
             });
         if (sparse_family == family_properties.end()) {
-            return false;
+            sparse_buffers = false;
+        } else {
+            sparse_queue_family_index = static_cast<u32>(sparse_family - family_properties.begin());
         }
-        sparse_queue_family_index = static_cast<u32>(sparse_family - family_properties.begin());
     }
+    if (!sparse_buffers) std::puts("GPU: using fully backed buffer arenas (sparse buffers unavailable or disabled)");
 
     static constexpr std::array queue_priorities = {1.0f};
     const vk::DeviceQueueCreateInfo queue_info = {
@@ -510,6 +517,7 @@ bool Instance::CreateDevice() {
                 .fillModeNonSolid = features.fillModeNonSolid,
                 .depthBounds = features.depthBounds,
                 .wideLines = features.wideLines,
+                .largePoints = features.largePoints,
                 .multiViewport = features.multiViewport,
                 .samplerAnisotropy = features.samplerAnisotropy,
                 .vertexPipelineStoresAndAtomics = features.vertexPipelineStoresAndAtomics,
@@ -523,8 +531,8 @@ bool Instance::CreateDevice() {
                 .shaderFloat64 = features.shaderFloat64,
                 .shaderInt64 = features.shaderInt64,
                 .shaderInt16 = features.shaderInt16,
-                .sparseBinding = features.sparseBinding,
-                .sparseResidencyBuffer = features.sparseResidencyBuffer,
+                .sparseBinding = sparse_buffers,
+                .sparseResidencyBuffer = sparse_buffers,
             },
         },
         vk::PhysicalDeviceVulkan11Features{

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <filesystem>
 #include <boost/asio/io_context.hpp>
 #include "common/polyfill_thread.h"
 #include "video_core/renderdoc.h"
@@ -390,6 +391,17 @@ void RequestScreenshot(ScreenshotRequest request) {
     }
 }
 u32 ConsumeGameOnlyScreenshotRequests() {
+    // A one-shot file trigger also works on devices without an F12 key.
+    static const char* trigger = std::getenv("TEMPEST_SCREENSHOT_TRIGGER");
+    static auto next_poll = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (trigger && now >= next_poll) {
+        next_poll = now + std::chrono::milliseconds(250);
+        std::error_code ec;
+        if (std::filesystem::remove(trigger, ec)) {
+            screenshot_requests.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
     return screenshot_requests.exchange(0, std::memory_order_acq_rel);
 }
 u32 ConsumeWithOverlaysScreenshotRequests() { return 0; }

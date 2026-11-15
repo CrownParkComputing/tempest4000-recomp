@@ -191,6 +191,12 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, const char* title) : width{width_}
 
     const char* driver = SDL_GetCurrentVideoDriver();
     const SDL_PropertiesID wp = SDL_GetWindowProperties(window);
+#ifdef __ANDROID__
+    if (driver && !std::strcmp(driver, "android")) {
+        window_info.type = WindowSystemType::Android;
+        window_info.render_surface = SDL_GetPointerProperty(wp, SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+    } else
+#endif
 #ifdef _WIN32
     if (driver && !std::strcmp(driver, "windows")) {
         window_info.type = WindowSystemType::Windows;
@@ -440,6 +446,18 @@ bool WindowSDL::PollEvents() {
     }
     if (window) {
         const SDL_WindowFlags flags = SDL_GetWindowFlags(window);
+#ifdef __ANDROID__
+        if (std::getenv("TEMPEST_SURFACE_TRACE")) {
+            static SDL_WindowFlags previous_flags = ~SDL_WindowFlags{};
+            static void* previous_surface = reinterpret_cast<void*>(~uintptr_t{});
+            void* surface = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr);
+            if (flags != previous_flags || surface != previous_surface) {
+                std::printf("Android window: flags=0x%llx native=%p shown=%d pixels=%dx%d\n",
+                    static_cast<unsigned long long>(flags), surface, int(shown), GetWidth(), GetHeight());
+                previous_flags = flags; previous_surface = surface;
+            }
+        }
+#endif
         const bool min = (flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN | SDL_WINDOW_OCCLUDED)) != 0;
         const bool was_min = is_minimized.exchange(min, std::memory_order_acq_rel);
         if (was_min && !min) {

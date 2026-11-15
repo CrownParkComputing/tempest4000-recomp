@@ -96,6 +96,7 @@ public:
     vk::Queue GetSparseQueue() const {
         return sparse_queue;
     }
+    bool HasSparseBuffers() const { return sparse_buffers; }
 
     vk::Queue GetPresentQueue() const {
         return present_queue;
@@ -540,6 +541,7 @@ private:
     vk::Queue present_queue;
     vk::Queue graphics_queue;
     vk::Queue sparse_queue;
+    bool sparse_buffers{};
     std::vector<vk::PhysicalDevice> physical_devices;
     std::vector<std::string> available_extensions;
     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;

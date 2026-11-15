@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "common/host_cpu.h"
 #include <cmath>
 #include <cstdio>
 #include <mutex>
@@ -34,6 +35,15 @@
 #include "video_core/texture_cache/texture_cache.h"
 
 namespace Vulkan {
+
+// Opt-in draw diagnostics: keep a selected mesh's inputs and its image before later glows.
+static bool TraceVertexShader(u64 hash) {
+    static const u64 selected = [] {
+        const char* value = std::getenv("TEMPEST_DIAG_VERTEX_SHADER");
+        return value ? std::strtoull(value, nullptr, 0) : 0ull;
+    }();
+    return selected && selected == hash && FrameCapture::IsRecording();
+}
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -824,13 +834,13 @@ void Rasterizer::PrintPipeStats() {
     }
     static auto window = std::chrono::steady_clock::now();
     static u64 last_packets = 0, last_drains = 0, last_drain_cycles = 0, last_busy = 0;
-    static u64 last_tsc = __rdtsc();
+    static u64 last_tsc = Common::ReadHostCounter();
     const auto now = std::chrono::steady_clock::now();
     const double seconds = std::chrono::duration<double>(now - window).count();
     if (seconds < 5.0) {
         return;
     }
-    const u64 tsc = __rdtsc();
+    const u64 tsc = Common::ReadHostCounter();
     const double cycles = double(tsc - last_tsc);
     const u64 busy = draw_pipe->busy_cycles.load(std::memory_order_relaxed);
     std::printf("Draw pipe: %.0f draws/s pipelined, %.0f drains/s that waited, stage A waited "
@@ -1049,7 +1059,10 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
     if (FrameCapture::Active()) {
         const auto* ps = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
         const std::string detail =
-            std::format(" | blend {} z {}{} cull {} mask {:x}{}", u32(regs.blend_control[0].enable),
+            std::format(" | prim {} point-size-export {} point-control {:x} ps-input0 {:x} blend {} z {}{} cull {} mask {:x}{}",
+                        u32(regs.primitive_type), u32(regs.vs_output_control.use_vtx_point_size),
+                        regs.reg_array[0xA1B5],
+                        std::bit_cast<u32>(regs.ps_inputs[0]), u32(regs.blend_control[0].enable),
                         u32(regs.depth_control.depth_enable), u32(regs.depth_control.depth_write_enable),
                         u32(regs.polygon_control.CullingMode()), u32(regs.color_target_mask.raw),
                         capture_vertices);
@@ -1067,6 +1080,30 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         }
     }
     DebugState.IncDrawCall();
+
+    if (TraceVertexShader(vs_info.pgm_hash)) {
+        // DiagDumpImage waits for the draw and resolves the image for readback. A second
+        // capture at the pass boundary shows whether subsequent blending hides this mesh.
+        const auto targets = diag_targets;
+        const auto sampled = bound_images;
+        for (const auto image_id : targets) texture_cache.DiagDumpImage(image_id, "mesh");
+        for (const auto image_id : sampled) texture_cache.DiagDumpImage(image_id, "meshtex");
+        if (is_indexed) {
+            const bool index16 = regs.index_buffer_type.index_type == AmdGpu::IndexType::Index16;
+            const u32 bytes = index16 ? sizeof(u16) : sizeof(u32);
+            const VAddr address = regs.index_base_address.Address<VAddr>() + index_offset * bytes;
+            const u32 count = std::min(regs.num_indices, 256u);
+            std::string text = std::format("\n  mesh indices at {:#x}, {}-bit:", address, bytes * 8);
+            if (memory->IsValidGpuMapping(address, u64(count) * bytes)) {
+                for (u32 i = 0; i < count; ++i) {
+                    u32 value = 0;
+                    std::memcpy(&value, reinterpret_cast<const void*>(address + u64(i) * bytes), bytes);
+                    text += std::format(" {}", value);
+                }
+            }
+            FrameCapture::Note(text.c_str());
+        }
+    }
 
     ResetBindings(false);
     scheduler.KickRecording();
@@ -1733,6 +1770,30 @@ void Rasterizer::ResolveVertexBuffers(const GraphicsPipeline* pipeline,
 
     if (FrameCapture::IsRecording()) {
         CaptureVertices(guest_buffers.empty() ? AmdGpu::Buffer{} : guest_buffers[0]);
+    }
+    if (TraceVertexShader(pipeline->GetStage(Shader::SwStage::Vertex).pgm_hash)) {
+        std::string text;
+        for (u32 i = 0; i < guest_buffers.size(); ++i) {
+            const auto& buffer = guest_buffers[i];
+            std::array<u32, 4> sharp{};
+            std::memcpy(sharp.data(), &buffer, sizeof(sharp));
+            text += std::format("\n  mesh input {} location {} format {} address {:#x} stride {} records {} sharp {:08x} {:08x} {:08x} {:08x}",
+                i, attributes[i].location, vk::to_string(attributes[i].format),
+                u64(buffer.base_address), buffer.GetStride(), buffer.num_records,
+                sharp[0], sharp[1], sharp[2], sharp[3]);
+            const u32 stride = buffer.GetStride();
+            const u32 count = std::min(buffer.num_records, 64u);
+            if (!stride || !memory->IsValidGpuMapping(buffer.base_address, u64(count) * stride)) continue;
+            for (u32 n = 0; n < count; ++n) {
+                text += std::format("\n    vertex {}:", n);
+                for (u32 word = 0; word < std::min(stride / 4, 8u); ++word) {
+                    u32 value;
+                    std::memcpy(&value, reinterpret_cast<const void*>(buffer.base_address + u64(n) * stride + word * 4), 4);
+                    text += std::format(" {:08x}", value);
+                }
+            }
+        }
+        FrameCapture::Note(text.c_str());
     }
     if (bindings.empty()) {
         // If there are no bindings, there is nothing further to do.
@@ -3119,6 +3180,13 @@ void Rasterizer::UpdateViewportScissorState() const {
     auto& dynamic_state = scheduler.GetDynamicState();
     dynamic_state.SetViewports(viewports);
     dynamic_state.SetScissors(scissors);
+    if (FrameCapture::IsRecording()) {
+        std::string description = "viewports";
+        for (const auto& vp : viewports) {
+            description += std::format(" ({},{}) {}x{}", vp.x, vp.y, vp.width, vp.height);
+        }
+        FrameCapture::Note(description.c_str());
+    }
 }
 
 vk::Pipeline Rasterizer::SquarePass(const GraphicsPipeline& pipeline) const {

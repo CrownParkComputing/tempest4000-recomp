@@ -172,7 +172,10 @@ void Translator::EmitPrologue(IR::Block* first_block) {
     case SwStage::Fragment: {
         dst_vreg =
             IterateBarycentrics(runtime_info, [this](u32 vreg, IR::Attribute attrib, u32 comp) {
-                if (profile.supports_amd_shader_explicit_vertex_parameter ||
+                // Point sprites supply these registers through PointCoord even when the
+                // driver has no triangle-barycentric extension (for example Turnip).
+                if ((runtime_info.hw.fs.point_primitive && IR::IsBarycentricCoord(attrib)) ||
+                    profile.supports_amd_shader_explicit_vertex_parameter ||
                     profile.supports_fragment_shader_barycentric) {
                     ir.SetVectorReg(IR::VectorReg(vreg), ir.GetAttribute(attrib, comp));
                 }

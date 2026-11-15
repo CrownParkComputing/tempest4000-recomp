@@ -1,6 +1,7 @@
 /* Narrow, explicit PS4 libc contracts. No automatic success stubs. */
 #define _CRT_RAND_S
 #include "runtime.h"
+#include "guest_call.h"
 #include "gpu/tempest_gpu.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -133,8 +134,10 @@ void runtime_finalize(void *dso) {
         if (!i) { pthread_mutex_unlock(&handler_lock); return; }
         ExitHandler handler = handlers[i-1]; handlers[i-1].active = 0;
         pthread_mutex_unlock(&handler_lock);
-        if (handler.with_arg) handler.callback.with_arg(handler.argument);
-        else handler.callback.plain();
+        if (handler.with_arg) {
+            typedef void (ABI *WithArg)(void *);
+            GUEST_CALL1(WithArg,handler.callback.with_arg,handler.argument);
+        } else GUEST_CALL0(GuestCallback,handler.callback.plain);
     }
 }
 static _Atomic uint32_t next_guard_owner=1;

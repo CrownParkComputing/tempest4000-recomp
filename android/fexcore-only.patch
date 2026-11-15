@@ -1,0 +1,61 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 1d84840..1db1c03 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,6 +7,7 @@ check_include_files("gdb/jit-reader.h" HAVE_GDB_JIT_READER_H)
+ option(BUILD_FEX_LINUX_TESTS "Build FEXLinuxTests (requires x86 compiler)" FALSE)
+ option(BUILD_THUNKS "Build thunks" FALSE)
+ option(BUILD_FEXCONFIG "Build FEXConfig" TRUE)
++option(BUILD_FEXCORE_ONLY "Build the embedding libraries without Linux executable loaders" OFF)
+ option(ENABLE_CLANG_THUNKS "Build thunks with clang" TRUE)
+ option(ENABLE_IWYU "Enable the Include What You Use sanitizer" FALSE)
+ option(ENABLE_LTO "Enable LTO with compilation" TRUE)
+@@ -61,7 +62,7 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+   message(FATAL_ERROR "Unsupported pointer size ${CMAKE_SIZEOF_VOID_P}."
+     " FEX only supports 64-bit (8-byte pointer) systems."
+     " If you believe this is in error, file an issue.")
+-elseif (NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux"))
++elseif (NOT (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (ANDROID AND BUILD_FEXCORE_ONLY)))
+   message(FATAL_ERROR "Unsupported system type ${CMAKE_SYSTEM_NAME}."
+     " FEX only supports Linux and Windows."
+     " If you believe this is in error, file an issue.")
+@@ -599,7 +600,18 @@ add_subdirectory(External/SoftFloat-3e/)
+ add_subdirectory(External/cephes/)
+ add_subdirectory(FEXHeaderUtils/)
+ add_subdirectory(CodeEmitter/)
+-add_subdirectory(FEXCore/)
++if (BUILD_FEXCORE_ONLY)
++  add_subdirectory(FEXCore/ EXCLUDE_FROM_ALL)
++  add_subdirectory(Source/Common/ EXCLUDE_FROM_ALL)
++  add_subdirectory(Source/Tools/CommonTools/ EXCLUDE_FROM_ALL)
++  if (NOT IS_ABSOLUTE "${FEXCORE_EMBED_PROJECT}")
++    message(FATAL_ERROR "FEXCORE_EMBED_PROJECT must name an absolute CMake include")
++  endif()
++  include("${FEXCORE_EMBED_PROJECT}")
++  return()
++else()
++  add_subdirectory(FEXCore/)
++endif()
+ 
+ if (ARCHITECTURE_arm64 AND NOT MINGW AND NOT BUILD_STEAM_SUPPORT)
+   # Binfmt_misc files must be installed prior to Source/ installs
+diff --git a/Source/Common/CMakeLists.txt b/Source/Common/CMakeLists.txt
+index 259dec4..4b3d046 100644
+--- a/Source/Common/CMakeLists.txt
++++ b/Source/Common/CMakeLists.txt
+@@ -12,11 +12,14 @@ set(SRCS
+ 
+ if (NOT MINGW)
+   list(APPEND SRCS
+-    FEXServerClient.cpp
+     FileFormatCheck.cpp
+     Linux/SBRKAllocations.cpp)
+ endif()
+ 
++if (NOT MINGW AND NOT (ANDROID AND BUILD_FEXCORE_ONLY))
++  list(APPEND SRCS FEXServerClient.cpp)
++endif()
++
+ add_library(${NAME} STATIC ${SRCS})
+ target_link_libraries(${NAME} FEXCore_Base cpp-optparse tiny-json::tiny-json FEXHeaderUtils range-v3::range-v3)
+ target_include_directories(${NAME} PRIVATE ${CMAKE_BINARY_DIR}/generated)

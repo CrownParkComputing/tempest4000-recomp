@@ -5,10 +5,12 @@
 #include <unordered_map>
 #include <boost/container/flat_map.hpp>
 #include <queue>
+#include "common/arch.h"
+#ifdef ARCH_X86_64
 #include <xbyak/xbyak.h>
 #include <xbyak/xbyak_util.h>
-#include "common/arch.h"
 #include "common/decoder.h"
+#endif
 #include "common/io_file.h"
 #include "common/logging/log.h"
 #include "common/path_util.h"
@@ -866,6 +868,8 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
 
 } // namespace Shader::Optimization
 
+#elif defined(ARCH_ARM64) && defined(__linux__)
+#include "flatten_extended_userdata_arm64.inc"
 #else
 
 namespace Shader {

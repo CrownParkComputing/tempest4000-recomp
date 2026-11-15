@@ -28,6 +28,8 @@ void runtime_mutex_report(void);
 uintptr_t runtime_memory_resolve(const char *name);
 void runtime_memory_report(void);
 int runtime_memory_is_mapped(uintptr_t address, uint64_t size);
+/* Executable guest mapping containing address (for the ARM64 CPU backend). */
+int runtime_memory_executable_range(uintptr_t address, uintptr_t *start, uintptr_t *end);
 /* Host access to guest memory past page protection, through the backing view: write_backing
  * returns 0 when part of the range is unmapped, and skips GPU tracking. */
 int runtime_memory_write_backing(uintptr_t address, const void *data, uint64_t size);

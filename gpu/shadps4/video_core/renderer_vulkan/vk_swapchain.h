@@ -123,6 +123,7 @@ private:
     const Frontend::WindowSDL& window;
     vk::SwapchainKHR swapchain{};
     vk::SurfaceKHR surface{};
+    bool surface_lost{};
     vk::SurfaceFormatKHR surface_format;
     vk::Format view_format;
     vk::PresentModeKHR present_mode;

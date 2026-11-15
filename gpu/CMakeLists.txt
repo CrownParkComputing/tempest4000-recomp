@@ -11,6 +11,9 @@ endif()
 # Frame pointers keep the loader's thread dumps (watchdog, SIGUSR2 sampling) walkable.
 add_compile_options(-fno-omit-frame-pointer)
 
+if(ANDROID)
+    include(../android/GpuDependencies.cmake)
+else()
 find_package(Vulkan REQUIRED)
 find_package(fmt REQUIRED)
 find_package(Boost REQUIRED)
@@ -47,6 +50,7 @@ if (NOT miniz_FOUND)
     add_library(miniz::miniz ALIAS miniz)
 endif()
 find_package(Zydis REQUIRED)
+endif()
 find_program(GLSLANG_COMPILER NAMES glslang glslangValidator REQUIRED)
 
 set(SIRIT_USE_SYSTEM_SPIRV_HEADERS OFF CACHE BOOL "" FORCE)
@@ -94,6 +98,10 @@ set(COMMON
     shadps4/common/path_util.cpp shadps4/common/rdtsc.cpp shadps4/common/spin_lock.cpp shadps4/common/recursive_lock.cpp
     shadps4/common/string_util.cpp shadps4/common/thread.cpp shadps4/common/signal_context.cpp
     shim/common/logging/log.cpp)
+if(ANDROID)
+    # The x86 disassembler is used only by the x86 shader-table walker.
+    list(REMOVE_ITEM COMMON shadps4/common/decoder.cpp)
+endif()
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
 # Upstream HLE libraries compiled unchanged (or with "tempest:" patches); the C runtime
 # resolves first, so these only answer imports it does not implement.
@@ -146,9 +154,11 @@ target_include_directories(tempest_gpu PRIVATE shim shadps4 ${SHADER_INCLUDE} th
 target_compile_definitions(tempest_gpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(tempest_gpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 target_link_libraries(tempest_gpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
-    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 Tempest::FFmpeg miniz::miniz Zydis::Zydis sirit)
+    tsl::robin_map GPUOpen::VulkanMemoryAllocator PkgConfig::XXHASH PkgConfig::SDL3 Tempest::FFmpeg miniz::miniz sirit)
 target_include_directories(tempest_gpu PRIVATE third_party/xbyak)
-target_link_libraries(tempest_gpu PUBLIC PkgConfig::X11 Vulkan::Vulkan)
+target_link_libraries(tempest_gpu PUBLIC Vulkan::Vulkan)
+if(NOT ANDROID)
+target_link_libraries(tempest_gpu PUBLIC PkgConfig::X11 Zydis::Zydis)
 
 # tempest: the loader and the HLE runtime, linked with tempest_gpu here, where CMake knows
 # its dependencies (build.sh builds them with ninja).
@@ -177,6 +187,11 @@ target_link_libraries(tempest PRIVATE ${CMAKE_DL_LIBS} m)
 add_executable(tempest-setup ../setup/main_linux.cpp ../setup/setup.cpp ../setup/pkgdec.cpp)
 target_link_libraries(tempest-setup PRIVATE PkgConfig::SDL3)
 # tempest: runtime and renderer unit tests (bash build.sh --test builds and runs every *-test).
+add_executable(ngs2-test EXCLUDE_FROM_ALL ../tests/test_ngs2.c)
+set_target_properties(ngs2-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
+target_compile_options(ngs2-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+target_include_directories(ngs2-test PRIVATE .. ../src ../third_party/libatrac9)
+target_link_libraries(ngs2-test PRIVATE m)
 add_executable(audio-test EXCLUDE_FROM_ALL ../tests/test_audio.c)
 set_target_properties(audio-test PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF)
 target_compile_options(audio-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
@@ -307,3 +322,4 @@ add_executable(page-state-test EXCLUDE_FROM_ALL ../tests/test_page_state.cpp)
 target_include_directories(page-state-test PRIVATE ../tests/stubs shim shadps4)
 target_link_libraries(page-state-test PRIVATE Boost::headers)
 target_compile_options(page-state-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+endif() # Desktop runner and its tests; Android embeds tempest_gpu in its own activity.

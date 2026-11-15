@@ -3,6 +3,7 @@
  * boot and started here on request, as shadPS4's Linker::LoadAndStartModule does. Handles are
  * table index + 1 (0 is the eboot). */
 #include "runtime.h"
+#include "guest_call.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,7 +123,8 @@ int32_t runtime_module_start(const char *file, uint64_t args, const void *argp, 
     if (started) return (int32_t)i+1;
     typedef int32_t (ABI *ModuleStart)(uint64_t,const void *,void *);
     printf("Runtime: starting module %s at image offset 0x%llx\n",file,(unsigned long long)modules[i].init);
-    int32_t r=((ModuleStart)(image+modules[i].init))(args,argp,modules[i].procparam ? image+modules[i].procparam : NULL);
+    int32_t r=(int32_t)GUEST_CALL3(ModuleStart,image+modules[i].init,args,argp,
+                                 modules[i].procparam ? image+modules[i].procparam : NULL);
     printf("Runtime: module %s start returned %d\n",file,r);
     __atomic_add_fetch(&starts,1,__ATOMIC_RELAXED);
     if (result) *result=r;
@@ -166,6 +168,7 @@ void runtime_module_set_main(const RuntimeModule *m) { main_module=*m; }
  * and the guest backtrace. The modules'
  * pointer slots bound to __cxa_throw get throw_thunk instead, which logs and then jumps on, so no
  * host frame is on the stack while the guest unwinds. */
+#if defined(__x86_64__)
 static void *real_throw __attribute__((used));
 static int readable(const void *p, size_t n) {
 #ifdef _WIN32
@@ -221,6 +224,12 @@ void runtime_throw_trace_install(void) {
     }
     printf("Runtime: throw trace on (%u __cxa_throw slots)\n",slots);
 }
+#else
+void runtime_throw_trace_install(void) {
+    const char *e=getenv("TEMPEST_THROW_TRACE");
+    if (e && e[0]=='1') puts("Runtime: throw tracing is unavailable through the ARM64 CPU backend");
+}
+#endif
 /* sceKernelGetModuleInfoForUnwind(address, flags, info) (shadPS4 process.cpp): flags 3 and up are
  * EINVAL (info zeroed), no info EFAULT, info->st_size below the 304-byte record EINVAL, an address
  * outside every module ESRCH. Otherwise the module's name, .eh_frame_hdr, .eh_frame and its size,

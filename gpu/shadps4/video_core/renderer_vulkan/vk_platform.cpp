@@ -15,6 +15,10 @@
 
 #include <vector>
 #include <fmt/ranges.h>
+#ifdef __ANDROID__
+#include <SDL3/SDL.h>
+#include <android/native_window.h>
+#endif
 
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -28,6 +32,10 @@
 #endif
 
 namespace Vulkan {
+
+#ifdef __ANDROID__
+extern "C" PFN_vkGetInstanceProcAddr tempest_android_vulkan_proc();
+#endif
 
 static const char* const VALIDATION_LAYER_NAME = "VK_LAYER_KHRONOS_validation";
 static const char* const CRASH_DIAGNOSTIC_LAYER_NAME = "VK_LAYER_LUNARG_crash_diagnostic";
@@ -63,7 +71,29 @@ vk::SurfaceKHR CreateSurface(vk::Instance instance, const Frontend::WindowSDL& e
     const auto& window_info = emu_window.GetWindowInfo();
     vk::SurfaceKHR surface{};
 
-#if defined(VK_USE_PLATFORM_WIN32_KHR)
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
+    // tempest: SDL supplies the Android native window used by the tested Turnip surface path.
+    if (window_info.type == Frontend::WindowSystemType::Android) {
+        // Android replaces this pointer on pause/resume and surface changes. Hold a reference
+        // under SDL's property lock so Java cannot release it between lookup and Vulkan's acquire.
+        const auto properties = SDL_GetWindowProperties(emu_window.GetSDLWindow());
+        if (!SDL_LockProperties(properties)) return {};
+        auto* native = static_cast<ANativeWindow*>(SDL_GetPointerProperty(properties,
+            SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr));
+        if (native) ANativeWindow_acquire(native);
+        SDL_UnlockProperties(properties);
+        if (!native) return {}; // The next present retries when Android supplies a surface.
+        const vk::AndroidSurfaceCreateInfoKHR android_ci = {
+            .window = native,
+        };
+        const auto result = instance.createAndroidSurfaceKHR(&android_ci, nullptr, &surface);
+        ANativeWindow_release(native);
+        if (result != vk::Result::eSuccess) {
+            LOG_WARNING(Render_Vulkan, "Android surface is not ready: {}", vk::to_string(result));
+            return {};
+        }
+    }
+#elif defined(VK_USE_PLATFORM_WIN32_KHR)
     if (window_info.type == Frontend::WindowSystemType::Windows) {
         const vk::Win32SurfaceCreateInfoKHR win32_ci = {
             .hinstance = nullptr,
@@ -171,7 +201,11 @@ std::vector<const char*> GetInstanceExtensions(Frontend::WindowSystemType window
     switch (window_type) {
     case Frontend::WindowSystemType::Headless:
         break;
-#if defined(VK_USE_PLATFORM_WIN32_KHR)
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
+    case Frontend::WindowSystemType::Android:
+        extensions.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+        break;
+#elif defined(VK_USE_PLATFORM_WIN32_KHR)
     case Frontend::WindowSystemType::Windows:
         extensions.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
         break;
@@ -270,9 +304,16 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
     setenv("VK_DRIVER_FILES", icd_path.c_str(), true);
 #endif
 
+#ifdef __ANDROID__
+    // tempest: use the same rootless Turnip loader verified by the Android surface check.
+    const auto get_proc = tempest_android_vulkan_proc();
+    ASSERT_MSG(get_proc, "Android Vulkan driver was not initialized");
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(get_proc);
+#else
     static vk::detail::DynamicLoader dl;
     VULKAN_HPP_DEFAULT_DISPATCHER.init(
         dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
+#endif
 
     const auto [available_version_result, available_version] =
         VULKAN_HPP_DEFAULT_DISPATCHER.vkEnumerateInstanceVersion

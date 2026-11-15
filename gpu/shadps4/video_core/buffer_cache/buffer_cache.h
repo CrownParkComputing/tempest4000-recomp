@@ -138,6 +138,8 @@ private:
     }
 
     const Buffer* GetArena(u64 first_block, u64 last_block);
+    const Buffer* GetDenseArena(u64 first_block, u64 last_block);
+    void UpdateDenseAddresses(const Buffer* arena, u64 first_block, u64 end_block);
 
     void EnsureResident(const Buffer* arena, u64 first_block, u64 last_block);
 
@@ -198,7 +200,7 @@ private:
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;
 
-    std::array<const Buffer*, MAX_ARENA_PAGES> address_space{};
+    std::vector<const Buffer*> address_space;
     u64 arena_page_bits{MAX_ARENA_PAGE_BITS};
     u64 arena_page_size{u64{1} << MAX_ARENA_PAGE_BITS};
     u64 num_arena_pages{u64{1} << (ADDRESS_SPACE_BITS - MAX_ARENA_PAGE_BITS)};
@@ -209,11 +211,12 @@ private:
     struct Backing : public Interval {
         vk::DeviceMemory memory;
         u64 offset;
+        const Buffer* owner{}; // tempest: keeps fully backed arenas' residency intervals separate.
         constexpr bool CanMergeWith(const Backing& other) const noexcept {
-            return memory == other.memory && offset + (end - start) == other.offset;
+            return owner == other.owner && memory == other.memory && offset + (end - start) == other.offset;
         }
         constexpr Backing SubRange(u64 a, u64 b) const noexcept {
-            return {{a, b}, memory, offset + (a - start)};
+            return {{a, b}, memory, offset + (a - start), owner};
         }
     };
     IntervalList<Backing> resident_ranges;

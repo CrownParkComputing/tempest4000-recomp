@@ -108,6 +108,12 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         }();
         return param.is_integer ? ctx.OpBitcast(ctx.F32[1], value) : value;
     }
+    if (IR::IsBarycentricCoord(attr) && ctx.runtime_info.hw.fs.point_primitive) {
+        // GCN point-sprite shaders read the point's varying UV from the barycentric VGPRs.
+        // Vulkan triangle barycentrics are constant on points, so use PointCoord instead.
+        return ctx.OpLoad(ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.point_coord,
+                                                       ctx.ConstU32(comp)));
+    }
     if (IR::IsBarycentricCoord(attr) && attr != IR::Attribute::BaryCoordPullModel &&
         ctx.profile.supports_fragment_shader_barycentric) {
         ++comp;

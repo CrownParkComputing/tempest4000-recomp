@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.crownparkcomputing.tempest.gpucheck" android:versionCode="1" android:versionName="0.1">
+    <uses-feature android:name="android.hardware.vulkan.version" android:required="true" android:version="0x00400000" />
+    <application android:label="Tempest GPU Check" android:hasCode="false" android:debuggable="true" android:extractNativeLibs="true" android:allowBackup="false">
+        <activity android:name="android.app.NativeActivity" android:exported="true" android:screenOrientation="landscape" android:configChanges="orientation|keyboardHidden|screenSize" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+            <meta-data android:name="android.app.lib_name" android:value="tempest-gpu-check" />
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -13,8 +13,21 @@ public:
 };
 } // namespace Core::Loader
 
+#ifdef TEMPEST_FEX
+#include "fex_runtime.h"
+#include "core/guest_cpu/hle_call_adapter.h"
+// tempest: retain the actual C++ function type when registering an ARM64 graphics API.
+#define LIB_FUNCTION(nid, lib, libversion, mod, function)                                          \
+    do {                                                                                       \
+        tempest_fex_register_adapter(reinterpret_cast<uintptr_t>(function),                     \
+            Core::GuestCpu::MakeHleCallAdapter(function));                                       \
+        sym->AddSymbol(nid, lib, mod, Core::Loader::SymbolType::Function,                         \
+                       reinterpret_cast<u64>(function));                                       \
+    } while (false)
+#else
 #define LIB_FUNCTION(nid, lib, libversion, mod, function)                                          \
     sym->AddSymbol(nid, lib, mod, Core::Loader::SymbolType::Function,                             \
                    reinterpret_cast<u64>(function))
+#endif
 #define LIB_OBJ(nid, lib, libversion, mod, obj)                                                    \
     sym->AddSymbol(nid, lib, mod, Core::Loader::SymbolType::Object, reinterpret_cast<u64>(obj))

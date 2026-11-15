@@ -3,6 +3,7 @@
  * use FreeBSD numbering; host errno values never reach the guest directly. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "guest_call.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -291,7 +292,7 @@ static ABI int32_t thread_once(int32_t *once,void (ABI *routine)(void)) {
         int32_t state=__atomic_load_n(once,__ATOMIC_ACQUIRE);
         if (state==1) return 0;
         if (state==0 && __atomic_compare_exchange_n(once,&state,2,0,__ATOMIC_ACQ_REL,__ATOMIC_ACQUIRE)) {
-            routine();
+            GUEST_CALL0(GuestCallback,routine);
             __atomic_store_n(once,1,__ATOMIC_RELEASE);
             return 0;
         }
@@ -334,7 +335,8 @@ void runtime_thread_keys_cleanup(void) {
             void *value=key_values[i];
             if (!value || !keys[i].used || !keys[i].destructor) continue;
             key_values[i]=NULL; any=1;
-            keys[i].destructor(value);
+            typedef void (ABI *Destructor)(void *);
+            GUEST_CALL1(Destructor,keys[i].destructor,value);
         }
         if (!any) break;
     }

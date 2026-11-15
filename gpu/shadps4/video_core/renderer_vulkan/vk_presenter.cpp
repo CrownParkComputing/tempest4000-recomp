@@ -885,6 +885,15 @@ void Presenter::PresentLoadingFrame() {
 }
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
+#ifdef __ANDROID__
+    if (std::getenv("TEMPEST_SURFACE_TRACE")) {
+        static u32 calls{};
+        if ((calls++ % 120) == 0)
+            std::printf("Android present: minimized=%d shown=%d window=%dx%d frame=%ux%u game=%d\n",
+                int(window.IsMinimized()), int(window.IsShown()), window.GetWidth(), window.GetHeight(),
+                frame->width, frame->height, int(is_game_frame));
+    }
+#endif
     // Free the frame for reuse
     const auto free_frame = [&] {
         if (!is_reusing_frame) {
