@@ -1960,8 +1960,35 @@ bool Rasterizer::IsComputeMetaClear(const Pipeline* pipeline) {
         // Assume if a shader writes metadata without address calculation, it is a clear shader.
         for (const auto& desc : info.buffers) {
             const VAddr address = desc.GetSharp(info).base_address;
-            if (desc.IsSpecial() || !desc.is_written || !texture_cache.IsMeta(address)) {
+            if (desc.IsSpecial() || !desc.is_written) {
                 continue;
+            }
+            // tempest: a metadata entry is keyed by the address of its first slice. A write that
+            // holds less than every slice's CMask is the game clearing one slice: a cube face
+            // cleared face by face puts each slice's CMask write further on in memory. Taking
+            // the first face's write for the whole target marked slices cleared that were not.
+            const u32 written = desc.GetSharp(info).GetSize();
+            VAddr base = address;
+            u32 slice = 0;
+            if (!texture_cache.IsMeta(address)) {
+                // A later slice of a layered target: the write is a whole number of its own
+                // size above the target's CMask.
+                base = 0;
+                for (u32 k = 1; k < 32 && written && address >= u64{k} * written; ++k) {
+                    const VAddr candidate = address - u64{k} * written;
+                    const auto geometry = texture_cache.MetaSliceGeometry(candidate);
+                    if (!geometry) {
+                        continue;
+                    }
+                    if (geometry->first > k && written >= geometry->second) {
+                        base = candidate;
+                        slice = k;
+                    }
+                    break;
+                }
+                if (!base) {
+                    continue;
+                }
             }
             const bool clear = read <= 2;
             // Each shader's first one, either way.
@@ -1977,8 +2004,21 @@ bool Rasterizer::IsComputeMetaClear(const Pipeline* pipeline) {
             if (!clear) {
                 return false;
             }
-            texture_cache.ClearMeta(address);
-            // Assume all slices were updates
+            bool one_slice = slice != 0;
+            if (!one_slice) {
+                // A write at the CMask's own address that holds less than every slice's CMask
+                // clears the first slice alone.
+                if (const auto geometry = texture_cache.MetaSliceGeometry(base);
+                    geometry && written < geometry->second * geometry->first) {
+                    one_slice = true;
+                }
+            }
+            // The cleared state of that slice alone, or of every slice.
+            if (one_slice) {
+                texture_cache.TouchMeta(base, slice, true);
+            } else {
+                texture_cache.ClearMeta(base);
+            }
             LOG_TRACE(Render_Vulkan, "Metadata update skipped");
             return true;
         }

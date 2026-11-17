@@ -235,7 +235,7 @@ public:
     [[nodiscard]] ImageId ExpandImage(const ImageInfo& info, ImageId image_id);
 
     /// Reuploads image contents.
-    void RefreshImage(Image& image);
+    void RefreshImage(Image& image, u32 first_mip = 0);
 
     /// Retrieves the sampler that matches the provided S# descriptor.
     /// extra_lod_bias: tempest, added to the S#'s bias (reduced scene rendering).
@@ -328,6 +328,16 @@ public:
             return true;
         }
         return false;
+    }
+
+    /// tempest: a metadata surface's target geometry {layers, CMask bytes per slice}, if it is
+    /// registered and its target is layered. IsComputeMetaClear uses it for per-slice clears.
+    std::optional<std::pair<u32, u64>> MetaSliceGeometry(VAddr address) const {
+        const auto it = surface_metas.find(address);
+        if (it != surface_metas.end() && it->second.layers > 1 && it->second.slice_bytes) {
+            return std::pair{it->second.layers, it->second.slice_bytes};
+        }
+        return std::nullopt;
     }
 
     /// Runs the garbage collector.
@@ -593,6 +603,8 @@ private:
     struct MetaDataInfo {
         MetaType type;
         s32 clear_mask = -1;
+        u32 layers{};      ///< tempest: CMask: its color target's slices (FindColorTarget)
+        u64 slice_bytes{}; ///< tempest: CMask: bytes one slice's metadata takes, before padding
     };
     tsl::robin_map<VAddr, MetaDataInfo> surface_metas;
 };

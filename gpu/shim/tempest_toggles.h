@@ -105,6 +105,8 @@ inline std::atomic<std::uint64_t> fault_rip{0};
 inline thread_local std::uint64_t gpu_write_tag = 0;
 /// CPU write faults merged without a GPU download (BufferCache::TryMergeWrite).
 inline std::atomic<std::uint64_t> merged_writes{0};
+/// Device memory handed to the buffer cache's resident slabs (BufferCache::AllocateResident).
+inline std::atomic<std::int64_t> resident_bytes{0};
 enum GpuWriter : std::uint64_t { WriterFill = 1, WriterDma = 2, WriterHle = 3 };
 /// Diagnostics are collected only with TEMPEST_FRAME_STATS=1.
 inline const bool enabled = [] {
