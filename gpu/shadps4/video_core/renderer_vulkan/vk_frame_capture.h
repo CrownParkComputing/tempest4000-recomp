@@ -22,6 +22,10 @@ class FrameCapture {
 public:
     /// VideoOut thread, per flip: frame boundary, presented buffer, trigger file check.
     static void OnFlip(VAddr presented_address);
+    /// Flips so far (counted at every flip, recording or not).
+    static u64 Flips() {
+        return flips.load(std::memory_order_acquire);
+    }
 
     /// VideoOut: a display buffer the game registered. A pass drawing into one starts a frame
     /// in the GPU command stream (the flip itself runs a frame behind).

@@ -74,6 +74,16 @@ enum : std::uint64_t {
     /// Pipeline binaries are stored once each in pipeline-binaries/shared, the per-pipeline
     /// files hold their keys only; old files are converted at start (vk_pipeline_serialization).
     SharedBinaries = 1ull << 61,
+    /// An image only the CPU writes, written again in the flip it was re-uploaded in (a texture
+    /// the game streams into while draws bind it), stays unprotected until the next flip instead
+    /// of being re-protected and re-uploaded whole at every bind (TextureCache::InvalidateMemory).
+    DeferStreamedImageTracking = 1ull << 57,
+    /// An end-of-pipe/-shader event with no image queued for download does not wait for the
+    /// Vulkan recording thread (TextureCache::ProcessDownloadImages).
+    EmptyDownloadNoWait = 1ull << 62,
+    /// Up to 192 deferred GPU readbacks pending instead of 64; when full, only the oldest is
+    /// waited for instead of the whole GPU (TextureCache::ProcessDownloadImages).
+    DeepReadbackQueue = 1ull << 63,
 };
 inline bool Disabled(std::uint64_t bit) {
     return (__atomic_load_n(&runtime_disabled_optimizations, __ATOMIC_RELAXED) & bit) != 0;

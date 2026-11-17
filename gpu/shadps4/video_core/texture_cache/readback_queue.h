@@ -18,7 +18,7 @@ public:
         bool watched = true; ///< still protects its pages (see ReleaseOutside)
     };
     bool CanFit(std::uint64_t size) const {
-        return entries.size() < 64 && size <= MaxBytes && bytes <= MaxBytes - size;
+        return entries.size() < max_entries && size <= MaxBytes && bytes <= MaxBytes - size;
     }
     void Push(std::uint64_t address, std::uint64_t size, std::uint64_t tick, Payload payload) {
         assert(CanFit(size));
@@ -70,6 +70,17 @@ public:
         }
     }
     std::uint64_t Bytes() const { return bytes; }
+    /// tempest (DeepReadbackQueue): the pending-capacity policy; 192 keeps a busy frame's
+    /// downloads queued where 64 waited for the whole GPU.
+    void SetMaxEntries(std::size_t count) { max_entries = count; }
+    bool Empty() const { return entries.empty(); }
+    /// Tick of the oldest pending copy still holding its staging (0: none).
+    std::uint64_t OldestTick() const {
+        for (const auto& entry : entries) {
+            if (entry.valid) return entry.tick;
+        }
+        return 0;
+    }
 
 private:
     static bool OverlapsPage(const Entry& entry, std::uint64_t address, std::uint64_t size) {
@@ -83,6 +94,7 @@ private:
         return size && address < entry.address + entry.size && entry.address < address + size;
     }
     static constexpr std::uint64_t MaxBytes = 64ull << 20;
+    std::size_t max_entries = 64;
     std::deque<Entry> entries;
     std::uint64_t bytes = 0;
 };

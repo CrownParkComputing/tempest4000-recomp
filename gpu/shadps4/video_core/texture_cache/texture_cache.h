@@ -209,7 +209,7 @@ public:
         std::scoped_lock lock{mutex};
         ApplyBackingWrites();
         Image& image = slot_images[image_id];
-        TrackImage(image_id);
+        TrackImageUnlessDeferred(image_id);
         TouchImage(image);
         RefreshImage(image);
         SynchronizeAlias(image_id);
@@ -426,6 +426,9 @@ private:
     void UnregisterImage(ImageId image);
 
     /// Track CPU reads and writes for image
+    /// tempest: re-protects the image, unless its CPU writes were deferred to the next flip
+    /// (DeferStreamedImageTracking); a GPU write bind ends the deferral at once.
+    void TrackImageUnlessDeferred(ImageId image_id);
     void TrackImage(ImageId image_id);
     void TrackImageHead(ImageId image_id);
     void TrackImageTail(ImageId image_id);

@@ -157,6 +157,11 @@ public:
     } usage{};
     VAddr track_addr = 0;
     VAddr track_addr_end = 0;
+    /// tempest: flip of the last CPU fault on this image (DeferStreamedImageTracking).
+    u64 cpu_dirty_flip = ~0ULL;
+    /// tempest: a CPU-streamed image stays unprotected for the rest of the flip it was
+    /// re-uploaded in, instead of faulting and re-uploading at every bind.
+    bool track_deferred = false;
     VAddr guest_begin = 0; ///< info.guest_address
     VAddr guest_end = 0;   ///< info.guest_address + info.guest_size
     BackingImage* backing{};

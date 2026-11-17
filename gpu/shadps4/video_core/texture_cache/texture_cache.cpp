@@ -17,6 +17,7 @@
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_frame_capture.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_wait_diagnostics.h"
@@ -260,10 +261,23 @@ void TextureCache::ProcessDownloadImages() {
         ReportImageCreates();
     }
     if (deferred_readbacks) {
+        // tempest: images are queued for download by the thread that runs this (draw recording),
+        // so with none queued no page is protected below and there is nothing to wait for.
+        bool any_downloads = true;
+        if (!TempestToggle::Disabled(TempestToggle::EmptyDownloadNoWait)) {
+            std::scoped_lock lock{download_images_mutex};
+            any_downloads = !download_images.empty();
+        }
         // Upload workers must finish reading RAM before these pages become inaccessible.
-        scheduler.WaitHostCopies();
+        if (any_downloads) {
+            scheduler.WaitHostCopies();
+        }
         std::scoped_lock readback_lock{readback_mutex};
         RetireReadbacks();
+        const bool deep_queue = !TempestToggle::Disabled(TempestToggle::DeepReadbackQueue);
+        // Each pending copy watches its pages, and a page counts its watchers in 8 bits: 192
+        // stays under 255 with room for the images and buffers on the same page.
+        pending_readbacks.SetMaxEntries(deep_queue ? 192 : 64);
         std::unique_lock lock{download_images_mutex};
         for (const ImageId image_id : download_images) {
             const auto& image = slot_images[image_id];
@@ -272,8 +286,17 @@ void TextureCache::ProcessDownloadImages() {
                 image.info.size.depth * image.info.resources.layers * (image.info.num_bits / 8);
             if (!pending_readbacks.CanFit(size)) {
                 ++readbacks_waited;
-                scheduler.Finish();
-                RetireReadbacks();
+                if (deep_queue) {
+                    // Only the oldest copies have to be done: the GPU keeps the newer work.
+                    while (!pending_readbacks.CanFit(size) && pending_readbacks.OldestTick()) {
+                        scheduler.Wait(pending_readbacks.OldestTick());
+                        RetireReadbacks();
+                    }
+                }
+                if (!pending_readbacks.CanFit(size)) {
+                    scheduler.Finish();
+                    RetireReadbacks();
+                }
             }
             if (auto copy = RecordImageDownload(image_id)) {
                 if (!pending_readbacks.CanFit(copy->size)) {
@@ -625,6 +648,17 @@ void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
             // Untrack the image, so that the range is unprotected and the guest can write freely.
             InvalidateAlias(image);
             image.flags |= ImageFlagBits::CpuDirty;
+            // tempest: a second fault in one flip means the guest is still writing after the
+            // re-upload. The image stays unprotected until the next flip instead of faulting
+            // and re-uploading whole at every bind (a texture the game streams into while it
+            // is bound: WipEout HD's grid intro cost 114 fault+re-upload pairs in two flips).
+            const u64 flip = Vulkan::FrameCapture::Flips();
+            if (image.cpu_dirty_flip == flip &&
+                False(image.flags & (ImageFlagBits::GpuModified | ImageFlagBits::Aliased)) &&
+                !TempestToggle::Disabled(TempestToggle::DeferStreamedImageTracking)) {
+                image.track_deferred = true;
+            }
+            image.cpu_dirty_flip = flip;
             UntrackImage(image_id);
         } else if (pages_end < image_end) {
             // This page access may or may not modify the image.
@@ -1659,6 +1693,25 @@ void TextureCache::UnregisterImage(ImageId image_id) {
         }
         image_ids.erase(vector_it);
     });
+}
+
+void TextureCache::TrackImageUnlessDeferred(ImageId image_id) {
+    auto& image = slot_images[image_id];
+    if (image.track_deferred) {
+        // Deferral starts only on images no GPU work writes, so GpuModified here means a GPU
+        // write bind (render target, depth or storage target, which set it before UpdateImage)
+        // or a GPU copy into the image: that ends the deferral at once.
+        if (image.cpu_dirty_flip == Vulkan::FrameCapture::Flips() &&
+            False(image.flags & ImageFlagBits::GpuModified) &&
+            !TempestToggle::Disabled(TempestToggle::DeferStreamedImageTracking)) {
+            return; // Still the flip of the last write: the guest may still be writing.
+        }
+        image.track_deferred = false;
+        // Writes made while unprotected took no fault: read the image again, before any GPU
+        // write, as when each of those writes faulted and dirtied it.
+        image.flags |= ImageFlagBits::CpuDirty;
+    }
+    TrackImage(image_id);
 }
 
 void TextureCache::TrackImage(ImageId image_id) {
